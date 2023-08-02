@@ -1,0 +1,277 @@
+<?php
+session_start();
+include('../check_session.php');
+include('../mysql.php');
+?> 
+
+        <div class="timeline-right_s">
+        <div class="album box">
+    <div class="status-menu">
+        <div class="intro-title">Marktbewegung Future</div>
+    </div>
+    <div class="status-main">
+    <div class="info">
+            <?php
+        // Fehlerberichte aktivieren
+        error_reporting(E_ALL);
+        ini_set('display_errors', 1);
+
+        // Binden Sie Ihre Konfigurationsdatei ein
+        include '../mysql.php';
+
+        // Holen Sie die eindeutigen Symbole aus der Datenbank
+        $sql = "SELECT symbol, last_price, timestamp FROM coin_data ORDER BY timestamp DESC";
+        $result = $conn->query($sql);
+
+        $coins = [];
+        while($row = $result->fetch_assoc()) {
+            // Umwandlung des Zeitstempels in Sekunden
+            $timestampInSeconds = $row['timestamp'] / 1000;
+            $coins[$row['symbol']][] = ['price' => $row['last_price'], 'timestamp' => $timestampInSeconds];
+        }
+
+
+        ?>
+    <table id="coinTable" class="signal">
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Marktpreis</th>
+                <th>letzten 2 Minute (%)</th>
+                <th>letzten 5 Minuten (%)</th>
+                <th>letzte 1 Stunde (%)</th>
+                <th>letzten 24 Stunden (%)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php
+            foreach ($coins as $symbol => $data) {
+                $currentPrice = $data[0]['price'];
+                $sumPrices1MinAgo = $sumPrices5MinAgo = $sumPrices1HourAgo = $sumPrices24HoursAgo = 0;
+                $countPrices1MinAgo = $countPrices5MinAgo = $countPrices1HourAgo = $countPrices24HoursAgo = 0;
+
+                $time1MinAgo = time() - 2 * 60;
+                $time5MinAgo = time() - 5 * 60;
+                $time1HourAgo = time() - 60 * 60;
+                $time24HoursAgo = time() - 24 * 60 * 60;
+
+                foreach ($data as $priceData) {
+                    $timestamp = $priceData['timestamp'];                
+                    if ($timestamp > $time1MinAgo) {
+                        $sumPrices1MinAgo += $priceData['price'];
+                        $countPrices1MinAgo++;
+                    }
+                    if ($timestamp > $time5MinAgo) {
+                        $sumPrices5MinAgo += $priceData['price'];
+                        $countPrices5MinAgo++;
+                    }
+                    if ($timestamp > $time1HourAgo) {
+                        $sumPrices1HourAgo += $priceData['price'];
+                        $countPrices1HourAgo++;
+                    }
+                    if ($timestamp > $time24HoursAgo) {
+                        $sumPrices24HoursAgo += $priceData['price'];
+                        $countPrices24HoursAgo++;
+                    }
+                }
+
+                $averagePrice1MinAgo = $countPrices1MinAgo > 0 ? $sumPrices1MinAgo / $countPrices1MinAgo : null;
+                $averagePrice5MinAgo = $countPrices5MinAgo > 0 ? $sumPrices5MinAgo / $countPrices5MinAgo : null;
+                $averagePrice1HourAgo = $countPrices1HourAgo > 0 ? $sumPrices1HourAgo / $countPrices1HourAgo : null;
+                $averagePrice24HoursAgo = $countPrices24HoursAgo > 0 ? $sumPrices24HoursAgo / $countPrices24HoursAgo : null;
+            
+                $change1Min = $averagePrice1MinAgo !== null && $averagePrice1MinAgo != 0 ? (($currentPrice - $averagePrice1MinAgo) / $averagePrice1MinAgo) *100 : null;
+                $change5Min = $averagePrice5MinAgo !== null && $averagePrice5MinAgo != 0 ? (($currentPrice - $averagePrice5MinAgo) / $averagePrice5MinAgo) *100 : null;
+                $change1Hour = $averagePrice1HourAgo !== null && $averagePrice1HourAgo != 0 ? (($currentPrice - $averagePrice1HourAgo) / $averagePrice1HourAgo) *100 : null;
+                $change24Hours = $averagePrice24HoursAgo !== null && $averagePrice24HoursAgo != 0 ? (($currentPrice - $averagePrice24HoursAgo) / $averagePrice24HoursAgo) *100 : null;
+
+
+                $displaySymbol = explode('USDT_', $symbol)[0];
+
+                echo "<tr>";
+                echo "<td>{$displaySymbol}</td>";
+                echo "<td>" . rtrim(rtrim(number_format($currentPrice, 5, '.', ''), '0'), '.') . "</td>";
+                echo "<td data-sort='" . ($change1Min !== null ? $change1Min : '0') . "'>" . ($averagePrice1MinAgo !== null ? rtrim(rtrim(number_format($averagePrice1MinAgo, 5, '.', ''), '0'), '.') . " (<span style='color:" . ($change1Min < 0 ? "red" : "green") . "'>" . ($change1Min !== null ? rtrim(rtrim(number_format($change1Min, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "<td data-sort='" . ($change5Min !== null ? $change5Min : '0') . "'>" . ($averagePrice5MinAgo !== null ? rtrim(rtrim(number_format($averagePrice5MinAgo, 5, '.', ''), '0'), '.') . " (<span style='color:" . ($change5Min < 0 ? "red" : "green") . "'>" . ($change5Min !== null ? rtrim(rtrim(number_format($change5Min, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "<td data-sort='" . ($change1Hour !== null ? $change1Hour : '0') . "'>" . ($averagePrice1HourAgo !== null ? rtrim(rtrim(number_format($averagePrice1HourAgo, 5, '.', ''), '0'), '.') . " (<span style='color:" . ($change1Hour < 0 ? "red" : "green") . "'>" . ($change1Hour !== null ? rtrim(rtrim(number_format($change1Hour, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "<td data-sort='" . ($change24Hours !== null ? $change24Hours : '0') . "'>" . ($averagePrice24HoursAgo !== null ? rtrim(rtrim(number_format($averagePrice24HoursAgo, 5, '.', ''), '0'), '.') . " (<span style='color:" . ($change24Hours < 0 ? "red" : "green") . "'>" . ($change24Hours !== null ? rtrim(rtrim(number_format($change24Hours, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "</tr>";
+            }
+            ?>
+        </tbody>
+    </table>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    var $j = jQuery.noConflict();
+</script>
+<script src="https://cdn.datatables.net/1.10.23/js/jquery.dataTables.js"></script>
+<script>
+$(document).ready(function() {
+    $('#coinTable').DataTable({
+        "destroy": true,
+        "columns": [
+            null,
+            null,
+            { "type": "num" },
+            { "type": "num" },
+            { "type": "num" },
+            { "type": "num" }
+        ],
+        "order": [[ 1, "desc" ]], // Sortiert die erste Spalte (Aktueller Preis) absteigend
+        "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "Alle"]] // Anpassen der Dropdown-Optionen
+    });
+});
+</script>
+</div>
+    </div>
+</div>
+
+<hr>
+
+<div class="status box">
+    <div class="status-menu">
+        <div class="intro-title">Marktbewegung Spot</div>
+    </div>
+    <div class="status-main">
+    <div class="info">
+            <?php
+        // Fehlerberichte aktivieren
+        error_reporting(E_ALL);
+        ini_set('display_errors', 1);
+
+        // Binden Sie Ihre Konfigurationsdatei ein
+        include '../mysql.php';
+
+        // Holen Sie die eindeutigen Symbole aus der Datenbank
+        $sql = "SELECT symbol, buyOne, timestamp FROM coin_data_spot ORDER BY timestamp DESC";
+        $result = $conn->query($sql);
+
+        $coins = [];
+        while($row = $result->fetch_assoc()) {
+            // Umwandlung des Zeitstempels in Sekunden
+            $timestampInSeconds = $row['timestamp'] / 1000;
+            $coins[$row['symbol']][] = ['price' => $row['buyOne'], 'timestamp' => $timestampInSeconds];
+        }
+
+
+        ?>
+    <table id="coinTable_spot" class="signal">
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Marktpreis</th>
+                <th>letzten 2 Minute (%)</th>
+                <th>letzten 5 Minuten (%)</th>
+                <th>letzte 1 Stunde (%)</th>
+                <th>letzten 24 Stunden (%)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php
+            foreach ($coins as $symbol => $data) {
+                $currentPrice = $data[0]['price'];
+                $sumPrices1MinAgo = $sumPrices5MinAgo = $sumPrices1HourAgo = $sumPrices24HoursAgo = 0;
+                $countPrices1MinAgo = $countPrices5MinAgo = $countPrices1HourAgo = $countPrices24HoursAgo = 0;
+
+                $time1MinAgo = time() - 2 * 60;
+                $time5MinAgo = time() - 5 * 60;
+                $time1HourAgo = time() - 60 * 60;
+                $time24HoursAgo = time() - 24 * 60 * 60;
+
+                foreach ($data as $priceData) {
+                    $timestamp = $priceData['timestamp'];                
+                    if ($timestamp > $time1MinAgo) {
+                        $sumPrices1MinAgo += $priceData['price'];
+                        $countPrices1MinAgo++;
+                    }
+                    if ($timestamp > $time5MinAgo) {
+                        $sumPrices5MinAgo += $priceData['price'];
+                        $countPrices5MinAgo++;
+                    }
+                    if ($timestamp > $time1HourAgo) {
+                        $sumPrices1HourAgo += $priceData['price'];
+                        $countPrices1HourAgo++;
+                    }
+                    if ($timestamp > $time24HoursAgo) {
+                        $sumPrices24HoursAgo += $priceData['price'];
+                        $countPrices24HoursAgo++;
+                    }
+                }
+
+                $averagePrice1MinAgo = $countPrices1MinAgo > 0 ? $sumPrices1MinAgo / $countPrices1MinAgo : null;
+                $averagePrice5MinAgo = $countPrices5MinAgo > 0 ? $sumPrices5MinAgo / $countPrices5MinAgo : null;
+                $averagePrice1HourAgo = $countPrices1HourAgo > 0 ? $sumPrices1HourAgo / $countPrices1HourAgo : null;
+                $averagePrice24HoursAgo = $countPrices24HoursAgo > 0 ? $sumPrices24HoursAgo / $countPrices24HoursAgo : null;
+            
+                $change1Min = $averagePrice1MinAgo !== null && $averagePrice1MinAgo != 0 ? (($currentPrice - $averagePrice1MinAgo) / $averagePrice1MinAgo) *100 : null;
+                $change5Min = $averagePrice5MinAgo !== null && $averagePrice5MinAgo != 0 ? (($currentPrice - $averagePrice5MinAgo) / $averagePrice5MinAgo) *100 : null;
+                $change1Hour = $averagePrice1HourAgo !== null && $averagePrice1HourAgo != 0 ? (($currentPrice - $averagePrice1HourAgo) / $averagePrice1HourAgo) *100 : null;
+                $change24Hours = $averagePrice24HoursAgo !== null && $averagePrice24HoursAgo != 0 ? (($currentPrice - $averagePrice24HoursAgo) / $averagePrice24HoursAgo) *100 : null;
+
+
+                $displaySymbol = explode('USDT', $symbol)[0];
+
+                echo "<tr>";
+                echo "<td>{$displaySymbol}</td>";
+                echo "<td>" . rtrim(rtrim(number_format($currentPrice, $currentPrice < 1 ? 8 : 2, '.', ''), '0'), '.') . "</td>";
+                echo "<td data-sort='" . ($change1Min !== null ? $change1Min : '0') . "'>" . ($averagePrice1MinAgo !== null ? rtrim(rtrim(number_format($averagePrice1MinAgo, $averagePrice1MinAgo < 1 ? 10 : 2, '.', ''), '0'), '.') . " (<span style='color:" . ($change1Min < 0 ? "red" : "green") . "'>" . ($change1Min !== null ? rtrim(rtrim(number_format($change1Min, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "<td data-sort='" . ($change5Min !== null ? $change5Min : '0') . "'>" . ($averagePrice5MinAgo !== null ? rtrim(rtrim(number_format($averagePrice5MinAgo, $averagePrice5MinAgo < 1 ? 10 : 2, '.', ''), '0'), '.') . " (<span style='color:" . ($change5Min < 0 ? "red" : "green") . "'>" . ($change5Min !== null ? rtrim(rtrim(number_format($change5Min, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "<td data-sort='" . ($change1Hour !== null ? $change1Hour : '0') . "'>" . ($averagePrice1HourAgo !== null ? rtrim(rtrim(number_format($averagePrice1HourAgo, $averagePrice1HourAgo < 1 ? 10 : 2, '.', ''), '0'), '.') . " (<span style='color:" . ($change1Hour < 0 ? "red" : "green") . "'>" . ($change1Hour !== null ? rtrim(rtrim(number_format($change1Hour, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "<td data-sort='" . ($change24Hours !== null ? $change24Hours : '0') . "'>" . ($averagePrice24HoursAgo !== null ? rtrim(rtrim(number_format($averagePrice24HoursAgo, $averagePrice24HoursAgo < 1 ? 10 : 2, '.', ''), '0'), '.') . " (<span style='color:" . ($change24Hours < 0 ? "red" : "green") . "'>" . ($change24Hours !== null ? rtrim(rtrim(number_format($change24Hours, 3, '.', ''), '0'), '.') : 'No data') . "%</span>)" : "No data") . "</td>";
+                echo "</tr>";
+            }
+            ?>
+        </tbody>
+    </table>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    var $j = jQuery.noConflict();
+</script>
+<script src="https://cdn.datatables.net/1.10.23/js/jquery.dataTables.js"></script>
+<script>
+$(document).ready(function() {
+    $('#coinTable_spot').DataTable({
+        "destroy": true,
+        "columns": [
+            null,
+            null,
+            { "type": "num" },
+            { "type": "num" },
+            { "type": "num" },
+            { "type": "num" }
+        ],
+        "order": [[ 1, "desc" ]], // Sortiert die erste Spalte (Aktueller Preis) absteigend
+        "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "Alle"]] // Anpassen der Dropdown-Optionen
+    });
+});
+</script>
+</div>
+    </div>
+</div>
+
+
+<div class="status box">
+    <div class="status-menu">
+        <div class="intro-title">Balance</div>
+    </div>
+    <div class="status-main">
+
+    </div>
+</div>
+
+        <div class="status box">
+        <div class="status-menu">
+        <div class="intro-title">Gehaltene Coins</div>
+    </div>
+
+</div>
+
+<div class="status box2">
+    <div class="status-menu">
+        <div class="intro-title">History</div>
+    </div>
+    <div class="status-main">
+
+        </div>
+        </disv>
+</div>
