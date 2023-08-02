@@ -2,6 +2,7 @@
 session_start();
 include('../check_session.php');
 include('../mysql.php');
+
 ?> 
 
         <div class="timeline-right_s">
@@ -30,8 +31,42 @@ include('../mysql.php');
             $coins[$row['symbol']][] = ['price' => $row['last_price'], 'timestamp' => $timestampInSeconds];
         }
 
-
         ?>
+        <script>
+setInterval(function(){
+    $.ajax({
+        url: 'update_coins.php',
+        type: 'get',
+        success: function(data){
+            // Angenommen, 'data' ist eine JSON-Zeichenkette, die Ihre aktualisierten Tabellendaten enthält
+            var updatedData = JSON.parse(data);
+
+            // Verwenden Sie die DataTables-API, um Ihre Daten zu löschen und erneut hinzuzufügen
+            var table_future = $('#coinTable').DataTable();
+            table_future.clear();
+            // Fügen Sie die neuen Daten zur Tabelle hinzu
+            for (var symbol in updatedData.future) {
+                var coinData = updatedData.future[symbol];
+                for (var i = 0; i < coinData.length; i++) {
+                    table_future.row.add([symbol, coinData[i].price, coinData[i].timestamp]);
+                }
+            }
+            table_future.draw(); // Die DataTable neu zeichnen
+
+            var table_spot = $('#coinTable_spot').DataTable();
+            table_spot.clear();
+            // Fügen Sie die neuen Daten zur Tabelle hinzu
+            for (var symbol in updatedData.spot) {
+                var coinData = updatedData.spot[symbol];
+                for (var i = 0; i < coinData.length; i++) {
+                    table_spot.row.add([symbol, coinData[i].price, coinData[i].timestamp]);
+                }
+            }
+            table_spot.draw(); // Die DataTable neu zeichnen
+        }
+    });
+}, 3000); // 30000 Millisekunden = 3 Sekunden
+</script>
     <table id="coinTable" class="signal">
         <thead>
             <tr>
