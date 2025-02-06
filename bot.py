@@ -13,9 +13,17 @@ THEMEN_REGELN = {
 # Liste mit erlaubten Links
 ERLAUBTE_LINKS = [
     "https://t.me/+oADbpc7pjyY2NDcy",  # Dieser Link wird nicht gelöscht
-    "https://t.me/+5LKWu1RZHrU5ZGUy",              # Noch ein erlaubter Link
-    "https://t.me/+qgzN9e4x42k1NzQy",   # Ein weiterer Link
-    "https://www.meineseite.de"         # Und noch ein weiterer
+    "https://t.me/+5LKWu1RZHrU5ZGUy",  # Noch ein erlaubter Link
+    "https://t.me/+qgzN9e4x42k1NzQy",  # Ein weiterer Link
+    "https://t.me/+uj_H5Ikzfzg4OTVi",
+    "https://t.me/+2N4rEE4TiVQ0M2Qy",
+    "https://t.me/+vjLkkXIk7qZlNDdi",
+    "https://t.me/ZoeysAOGBStuttgart",
+    "https://t.me/ZoeysAOGBFFM",
+    "https://t.me/+RrE9ihQCowcxM2Ni",
+    "https://t.me/+J5BC_ulfaNgzNmMy",
+    "https://t.me/+zR0wr1A4BnZhMzFi",
+    "https://t.me/+tjOhC2Zw9EFmOGIy"
 ]
 # Regulärer Ausdruck zur Erkennung von URLs
 URL_PATTERN = re.compile(
