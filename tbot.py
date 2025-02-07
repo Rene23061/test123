@@ -146,5 +146,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-First Code funktioniert sehr gut, jetzt meine Frage lässt es sich realisieren dass der Benutzer Automat eine Tag vorher und eine Stunde vorher automatisch eine Nachricht bekommt und der Benutzer auch ? 
