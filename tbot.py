@@ -49,7 +49,10 @@ async def zeige_kalender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Kalender als Nachricht senden
         await update.message.reply_text(
-            "Wähle ein Datum aus:",
+            "🔥 Hey du, hier kannst du dir deinen ganz persönlichen Wunschtermin sichern 😏💋\n\n"
+            "Aber bedenke: Wenn dein Termin länger als 3 Tage in der Zukunft liegt, ist eine Anzahlung von 25% nötig. 💸 Warum? Weil leider viel zu oft Treffen kurzfristig abgesagt werden – und das raubt uns beiden nur den Spaß. Diese kleine Anzahlung zeigt, dass du es wirklich ernst meinst und bereit bist, dich voll auf dieses heiße Erlebnis einzulassen. Ohne die Anzahlung wird dein Termin nicht bestätigt. ❌\n\n"
+            "Also, worauf wartest du noch? \n\n"
+            "Wähle ein Datum aus: 📅",
             reply_markup=tastatur
         )
     except Exception as e:
@@ -58,7 +61,12 @@ async def zeige_kalender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # Funktion zur Verarbeitung der Auswahl eines Tages
 async def tag_ausgewaehlt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
+
+    try:
+        # Versuche die Abfrage zu beantworten
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"Warnung beim Beantworten der Callback-Abfrage: {e}")
 
     # Datum aus den Callback-Daten extrahieren
     _, tag, monat, jahr = query.data.split("_")
@@ -66,14 +74,21 @@ async def tag_ausgewaehlt(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Nachricht aktualisieren und die Uhrzeitauswahl anzeigen
     await query.edit_message_text(
-        f"Du hast den {context.user_data['ausgewaehltes_datum']} ausgewählt.\nBitte wähle eine Uhrzeit aus:",
+        f"Schon heiß auf unser Treffen? 🔥 Du hast den {context.user_data['ausgewaehltes_datum']} gewählt – eine perfekte Entscheidung. 😏💋\n\n"
+        "Jetzt bleibt nur noch die Frage: Um wie viel Uhr möchtest du erscheinen, damit wir uns endlich näherkommen? ⏰🍓\n\n"
+        "Wähle unten die passende Uhrzeit aus:",
         reply_markup=erstelle_zeit_tastatur()
     )
 
 # Funktion zur Verarbeitung der Uhrzeitauswahl
 async def zeit_ausgewaehlt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
+
+    try:
+        # Versuche die Abfrage zu beantworten
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"Warnung beim Beantworten der Callback-Abfrage: {e}")
 
     # Uhrzeit aus den Callback-Daten extrahieren
     _, start, ende = query.data.split("_")
@@ -87,7 +102,10 @@ async def zeit_ausgewaehlt(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     benutzer_username = f"@{query.from_user.username}" if query.from_user.username else "(kein Benutzername)"
 
     # Bestätigungstext
-    text = f"Du hast den {ausgewaehltes_datum} gewählt für {ausgewaehlte_uhrzeit} Uhr."
+    text = (
+        f"Sehr schön 😏 Du hättest gern einen Termin am {ausgewaehltes_datum} von {ausgewaehlte_uhrzeit} Uhr. 🔥💋\n\n"
+        "Ich werde mich schnellstmöglich bei dir melden, damit nichts mehr zwischen uns steht und wir uns ganz unseren Fantasien hingeben können. 😈🍓 Freu dich schon mal auf das, was kommt …"
+    )
 
     # Datum in ein datetime-Objekt umwandeln
     termin_datum = datetime.strptime(ausgewaehltes_datum, "%d.%m.%Y")
@@ -95,7 +113,13 @@ async def zeit_ausgewaehlt(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # Wenn der Termin mehr als 3 Tage in der Zukunft liegt, zusätzliche Nachricht senden
     if (termin_datum - heute).days > 3:
-        text += "\nDieser Termin liegt mehr als 3 Tage in der Zukunft. Bitte halte dir den Termin frei."
+        text += (
+            f"\n\nDer von dir gewählte Termin am {ausgewaehltes_datum} von {ausgewaehlte_uhrzeit} Uhr liegt mehr als 3 Tage in der Zukunft. 😏💋\n\n"
+            "Da es in der Vergangenheit leider öfter zu kurzfristigen Absagen gekommen ist, ist eine kleine Anzahlung von 25% nötig, um den Termin verbindlich zu machen. 💸🔥 "
+            "Diese Anzahlung zeigt mir, dass du es wirklich ernst meinst und genauso heiß auf unser Treffen bist wie ich. \n\n"
+            "Ich werde mich schnellstmöglich bei dir melden, damit wir alle Details klären und unser Verlangen bald zur Realität wird. 🍓😈 "
+            "Sollten unvorhergesehene Umstände meinerseits das Treffen verhindern, bekommst du die Anzahlung selbstverständlich zurück. ✅"
+        )
 
     # Nachricht aktualisieren
     await query.edit_message_text(text)
@@ -103,7 +127,7 @@ async def zeit_ausgewaehlt(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Private Nachricht an den Benutzer senden
     benutzer_id = query.from_user.id
     nachricht = f"""
-📅 <b>Terminbestätigung</b>
+📅 <b>Dein Terminwunsch</b>
 Benutzer: {benutzer_vorname} ({benutzer_username})
 Datum: {ausgewaehltes_datum}
 Zeit: {ausgewaehlte_uhrzeit} Uhr
@@ -113,7 +137,7 @@ Zeit: {ausgewaehlte_uhrzeit} Uhr
     # Nachricht an den Admin senden
     admin_id = 6093614638  # Deine Admin-Chat-ID
     admin_nachricht = f"""
-🚨 <b>Neuer Termin gebucht</b>
+🚨 <b>Neuer Termin angefragt!!</b>
 Benutzer: {benutzer_vorname} ({benutzer_username})
 Datum: {ausgewaehltes_datum}
 Zeit: {ausgewaehlte_uhrzeit} Uhr
@@ -138,7 +162,7 @@ def main():
         application.add_handler(CallbackQueryHandler(tag_ausgewaehlt, pattern="^tag_"))
         application.add_handler(CallbackQueryHandler(zeit_ausgewaehlt, pattern="^zeit_"))
 
-        # Bot starten und Nachricht in der Konsole ausgeben
+        # Bot starten
         logger.info("Bot erfolgreich gestartet und läuft jetzt...")
         application.run_polling()
     except Exception as e:
