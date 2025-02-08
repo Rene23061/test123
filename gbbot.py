@@ -1,7 +1,7 @@
 import logging
 import re
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, CallbackQueryHandler, filters
 
 # Logging aktivieren
 logging.basicConfig(
@@ -32,15 +32,14 @@ def get_current_date():
         return "Fehler beim Laden des Datums"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Benutzerdaten zurücksetzen
     context.user_data.clear()
     logger.info(f"Benutzerdaten für {update.effective_user.first_name} wurden zurückgesetzt.")
 
     current_date = get_current_date()
     options = [
-        ["13:00 - 17:00 Uhr\n100€\n25€ Anzahlung"], 
-        ["17:00 - 20:00 Uhr\n100€\n25€ Anzahlung"], 
-        ["13:00 - 20:00 Uhr\n150€\n50€ Anzahlung"]
+        ["13:00 - 17:00 Uhr\n100€"], 
+        ["17:00 - 20:00 Uhr\n100€"], 
+        ["13:00 - 20:00 Uhr\n150€"]
     ]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
     await update.message.reply_text(
@@ -59,12 +58,17 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_option"] = user_selection
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
 
-    # Extrahiere die Anzahlung aus der Option (dritte Zeile)
     option_lines = user_selection.split("\n")
-    selected_deposit = option_lines[2]
+    if "150€" in option_lines[1]:
+        selected_deposit = "50€"
+    else:
+        selected_deposit = "25€"
 
-    # Nachricht zur Anzahlung anzeigen
-    reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter (verstanden)"]], one_time_keyboard=True, resize_keyboard=True)
+    keyboard = [
+        [InlineKeyboardButton("Zurück", callback_data="back"), InlineKeyboardButton("Weiter (verstanden)", callback_data="continue")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
         escape_markdown_v2(
             f"Aufgrund häufiger kurzfristiger Absagen ist eine Anzahlung in Höhe von **{selected_deposit}** erforderlich.\n"
@@ -76,21 +80,18 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CONFIRM_SELECTION
 
 async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_choice = update.message.text
+    query = update.callback_query
+    await query.answer()
 
-    if user_choice == "Zurück":
-        # Zurück zur Optionsauswahl
-        return await start(update, context)
-    elif user_choice == "Weiter (verstanden)":
-        await update.message.reply_text(
+    if query.data == "back":
+        return await start(query, context)
+    elif query.data == "continue":
+        await query.edit_message_text(
             "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
             "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**.",
             parse_mode="MarkdownV2"
         )
         return UPLOAD_IMAGE
-    else:
-        await update.message.reply_text("Ungültige Auswahl. Bitte wähle 'Zurück' oder 'Weiter (verstanden)'.")
-        return CONFIRM_SELECTION
 
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text and update.message.text.lower() == "nein":
@@ -99,7 +100,6 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.message.photo:
         try:
-            # Die Datei-ID des hochgeladenen Bildes speichern
             photo_file_id = update.message.photo[-1].file_id
             context.user_data["photo_id"] = photo_file_id
             logger.info(f"Bild erfolgreich empfangen: {photo_file_id}")
@@ -132,7 +132,7 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
     selected_option = context.user_data["selected_option"]
     option_lines = selected_option.split("\n")
-    selected_time, selected_cost, selected_deposit = option_lines[0], option_lines[1], option_lines[2]
+    selected_time, selected_cost = option_lines[0], option_lines[1]
 
     # Falls ein Bild hochgeladen wurde, sende es zuerst
     if "photo_id" in context.user_data:
@@ -145,7 +145,6 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Zahlungsmethode: {payment_method}\n\n"
         f"**Kostenübersicht:**\n"
         f"Gesamtkosten: {selected_cost}\n"
-        f"Anzahlung: {selected_deposit}\n\n"
         "Ohne Anzahlung innerhalb der nächsten 48 Stunden ist keine Teilnahme garantiert."
     )
 
@@ -187,7 +186,7 @@ if __name__ == "__main__":
         entry_points=[CommandHandler("start", start)],
         states={
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
-            CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
+            CONFIRM_SELECTION: [CallbackQueryHandler(confirm_selection)],
             UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
