@@ -1,5 +1,5 @@
 import logging
-import os
+import re
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters
 
@@ -9,6 +9,10 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Hilfsfunktion: MarkdownV2-Sonderzeichen escapen
+def escape_markdown_v2(text: str) -> str:
+    return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 # Phasen der Unterhaltung
 SELECT_OPTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, SUMMARY = range(5)
@@ -39,21 +43,18 @@ def set_current_date(new_date: str):
 # Bot-Start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
-    
-    # Optionen
     options = [
         ["13:00 - 17:00 Uhr\n100€\n25€ Anzahlung"], 
         ["17:00 - 20:00 Uhr\n100€\n25€ Anzahlung"], 
         ["13:00 - 20:00 Uhr\n150€\n50€ Anzahlung"]
     ]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
-
-    logger.info(f"Startkommando empfangen von {update.effective_user.first_name}.")
-
     await update.message.reply_text(
-        f"Willkommen zur Veranstaltungsbuchung!\n"
-        f"Du möchtest an der Veranstaltung am **{current_date}** teilnehmen.\n"
-        "Bitte wähle einen Zeitraum aus:",
+        escape_markdown_v2(
+            f"Willkommen zur Veranstaltungsbuchung!\n"
+            f"Du möchtest an der Veranstaltung am **{current_date}** teilnehmen.\n"
+            "Bitte wähle einen Zeitraum aus:"
+        ),
         reply_markup=reply_markup,
         parse_mode="MarkdownV2"
     )
@@ -63,12 +64,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
     context.user_data["selected_option"] = user_selection
-
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
-
     await update.message.reply_text(
-        "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
-        "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**.",
+        escape_markdown_v2("Du kannst jetzt ein Bild hochladen oder schreibe **nein**."),
         parse_mode="MarkdownV2"
     )
     return UPLOAD_IMAGE
@@ -76,7 +74,7 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Bild hochladen oder überspringen
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.lower() == "nein":
-        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich.")
         return ENTER_DESCRIPTION
 
     if update.message.photo:
@@ -85,39 +83,32 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = f"downloads/{photo_file.file_id}.jpg"
             await photo_file.download_to_drive(file_path)
             context.user_data["photo_path"] = file_path
-
             logger.info(f"Bild erfolgreich heruntergeladen: {file_path}")
-            await update.message.reply_text("Bild erhalten! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+            await update.message.reply_text("Bild erhalten! Bitte beschreibe dich.")
             return ENTER_DESCRIPTION
         except Exception as e:
-            logger.error(f"Fehler beim Verarbeiten des hochgeladenen Bildes: {e}")
-            await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
+            logger.error(f"Fehler beim Hochladen des Bildes: {e}")
+            await update.message.reply_text("Fehler beim Hochladen. Versuche es erneut oder schreibe **nein**.")
             return UPLOAD_IMAGE
     else:
-        await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
+        await update.message.reply_text("Lade ein gültiges Bild hoch oder schreibe **nein**.")
         return UPLOAD_IMAGE
 
 # Beschreibung eingeben
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
     context.user_data["description"] = description
-
     logger.info(f"Beschreibung erhalten: {description}")
 
     payment_options = [["Revolut", "PayPal"], ["Amazon Gutschein"]]
     reply_markup = ReplyKeyboardMarkup(payment_options, one_time_keyboard=True)
-
-    await update.message.reply_text(
-        "Bitte wähle eine Zahlungsmethode aus:",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("Bitte wähle eine Zahlungsmethode aus:", reply_markup=reply_markup)
     return SELECT_PAYMENT
 
 # Zahlungsmethode auswählen
 async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payment_method = update.message.text
     context.user_data["payment_method"] = payment_method
-
     logger.info(f"Zahlungsmethode gewählt: {payment_method}")
 
     selected_date = get_current_date()
@@ -125,8 +116,8 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     option_lines = selected_option.split("\n")
     selected_time, selected_cost, selected_deposit = option_lines[0], option_lines[1], option_lines[2]
 
-    summary = (
-        f"Du möchtest am **{selected_date}** zur Zeit **{selected_time}** an meinem Event teilnehmen.\n\n"
+    summary = escape_markdown_v2(
+        f"Du möchtest am **{selected_date}** zur Zeit **{selected_time}** teilnehmen.\n\n"
         f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
         f"Zahlungsmethode: {payment_method}\n\n"
         f"**Kostenübersicht:**\n"
@@ -138,22 +129,22 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(summary, parse_mode="MarkdownV2")
 
     if payment_method == "PayPal":
-        await update.message.reply_text("Bitte überweise den Betrag an **paypal@example.com**.")
+        await update.message.reply_text("Bitte überweise an **paypal@example.com**.")
     elif payment_method == "Revolut":
-        await update.message.reply_text("Bitte überweise den Betrag an IBAN **DE123456789**.")
+        await update.message.reply_text("Bitte überweise an IBAN **DE123456789**.")
     elif payment_method == "Amazon Gutschein":
-        await update.message.reply_text("Bitte sende den Gutschein-Code hier im Chat oder kontaktiere uns direkt.")
+        await update.message.reply_text("Sende den Gutschein-Code hier im Chat oder kontaktiere uns.")
 
     return SUMMARY
 
 # Fallback-Nachricht
 async def fallback_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Entschuldigung, ich habe das nicht verstanden. Bitte verwende eine der vorgeschlagenen Optionen oder /cancel.")
+    await update.message.reply_text("Entschuldigung, ich habe das nicht verstanden. Bitte verwende eine der Optionen oder /cancel.")
 
 # Beenden des Gesprächs
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Gespräch abgebrochen von Benutzer {update.effective_user.first_name}.")
-    await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben, um von vorne zu beginnen.")
+    await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
     return ConversationHandler.END
 
 # Datum setzen
@@ -164,14 +155,15 @@ async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     new_date = context.args[0]
     set_current_date(new_date)
-    await update.message.reply_text(f"Das neue Veranstaltungsdatum wurde auf **{new_date}** gesetzt.", parse_mode="MarkdownV2")
+    await update.message.reply_text(
+        escape_markdown_v2(f"Das neue Veranstaltungsdatum wurde auf **{new_date}** gesetzt."),
+        parse_mode="MarkdownV2"
+    )
 
 # Hauptprogramm
 if __name__ == "__main__":
-    # Test-Token
     app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
 
-    # Gesprächssteuerung
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -184,7 +176,6 @@ if __name__ == "__main__":
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
-    # Handler registrieren
     app.add_handler(CommandHandler("datum", set_event_date))
     app.add_handler(conv_handler)
 
