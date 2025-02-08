@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 def escape_markdown_v2(text: str) -> str:
     return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
-SELECT_OPTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, SUMMARY = range(5)
+# Phasen der Unterhaltung
+SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, SUMMARY = range(6)
 
 DATE_FILE = "event_date.txt"
 
@@ -31,6 +32,10 @@ def get_current_date():
         return "Fehler beim Laden des Datums"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Benutzerdaten zurücksetzen
+    context.user_data.clear()
+    logger.info(f"Benutzerdaten für {update.effective_user.first_name} wurden zurückgesetzt.")
+
     current_date = get_current_date()
     options = [
         ["13:00 - 17:00 Uhr\n100€\n25€ Anzahlung"], 
@@ -53,11 +58,39 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
     context.user_data["selected_option"] = user_selection
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
+
+    # Extrahiere die Anzahlung aus der Option (dritte Zeile)
+    option_lines = user_selection.split("\n")
+    selected_deposit = option_lines[2]
+
+    # Nachricht zur Anzahlung anzeigen
+    reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter (verstanden)"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
-        escape_markdown_v2("Du kannst jetzt ein Bild hochladen oder schreibe **nein**, um fortzufahren."),
+        escape_markdown_v2(
+            f"Aufgrund häufiger kurzfristiger Absagen ist eine Anzahlung in Höhe von **{selected_deposit}** erforderlich.\n"
+            "Bitte bestätige, dass du dies verstanden hast."
+        ),
+        reply_markup=reply_markup,
         parse_mode="MarkdownV2"
     )
-    return UPLOAD_IMAGE
+    return CONFIRM_SELECTION
+
+async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_choice = update.message.text
+
+    if user_choice == "Zurück":
+        # Zurück zur Optionsauswahl
+        return await start(update, context)
+    elif user_choice == "Weiter (verstanden)":
+        await update.message.reply_text(
+            "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
+            "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**.",
+            parse_mode="MarkdownV2"
+        )
+        return UPLOAD_IMAGE
+    else:
+        await update.message.reply_text("Ungültige Auswahl. Bitte wähle 'Zurück' oder 'Weiter (verstanden)'.")
+        return CONFIRM_SELECTION
 
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text and update.message.text.lower() == "nein":
@@ -66,6 +99,7 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.message.photo:
         try:
+            # Die Datei-ID des hochgeladenen Bildes speichern
             photo_file_id = update.message.photo[-1].file_id
             context.user_data["photo_id"] = photo_file_id
             logger.info(f"Bild erfolgreich empfangen: {photo_file_id}")
@@ -153,6 +187,7 @@ if __name__ == "__main__":
         entry_points=[CommandHandler("start", start)],
         states={
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
+            CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
             UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
