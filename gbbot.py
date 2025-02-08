@@ -1,3 +1,4 @@
+
 import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters
@@ -59,28 +60,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return SELECT_OPTION
 
-# Datum ändern
-async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if context.args:
-            new_date = " ".join(context.args)
-
-            if len(new_date.split(".")) == 3:
-                set_current_date(new_date)
-                await update.message.reply_text(f"Das Veranstaltungsdatum wurde auf **{new_date}** geändert.", parse_mode="Markdown")
-                logger.info(f"Veranstaltungsdatum durch Benutzer {update.effective_user.first_name} geändert: {new_date}")
-
-                await start(update, context)
-            else:
-                await update.message.reply_text("Das angegebene Datum hat nicht das richtige Format. Bitte gib es im Format TT.MM.JJJJ ein.")
-                logger.warning("Falsches Datumformat erkannt.")
-        else:
-            await update.message.reply_text("Bitte gib das Datum im Format `/datum TT.MM.JJJJ` ein.")
-            logger.warning("Datum wurde nicht übergeben.")
-    except Exception as e:
-        logger.error(f"Fehler beim Verarbeiten des Datums: {e}")
-        await update.message.reply_text("Es ist ein Fehler beim Setzen des Datums aufgetreten.")
-
 # Option auswählen
 async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
@@ -100,17 +79,24 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text.lower() == "nein":
         await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
         return ENTER_DESCRIPTION
-    
-    try:
-        photo_file = update.message.photo[-1].file_id  # Letztes (höchste Auflösung)
-        context.user_data["photo"] = photo_file  # Speichere das Bild
-        logger.info("Bild erfolgreich empfangen und gespeichert.")
 
-        await update.message.reply_text("Bild erhalten! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-        return ENTER_DESCRIPTION
-    except Exception as e:
-        logger.error(f"Fehler beim Verarbeiten des hochgeladenen Bildes: {e}")
-        await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
+    # Wenn ein Bild hochgeladen wurde
+    if update.message.photo:
+        try:
+            # Hole die Datei-ID des Bildes mit der höchsten Auflösung
+            photo_file = update.message.photo[-1].file_id
+            context.user_data["photo"] = photo_file  # Speichere die Bild-ID
+            logger.info("Bild erfolgreich empfangen und gespeichert.")
+
+            await update.message.reply_text("Bild erhalten! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+            return ENTER_DESCRIPTION
+        except Exception as e:
+            logger.error(f"Fehler beim Verarbeiten des hochgeladenen Bildes: {e}")
+            await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
+            return UPLOAD_IMAGE
+    else:
+        # Falls weder Text noch Bild vorhanden sind, Aufforderung zur Wiederholung
+        await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
         return UPLOAD_IMAGE
 
 # Beschreibung eingeben
