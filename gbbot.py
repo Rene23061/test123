@@ -40,11 +40,11 @@ def set_current_date(new_date: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
     
-    # Zeitoptionen mit Preisen und Anzahlungen definieren
+    # Optionen mit 3 Zeilen pro Button zusammenfassen
     options = [
-        ["13:00 - 17:00 Uhr", "100€", "25€ Anzahlung"], 
-        ["17:00 - 20:00 Uhr", "100€", "25€ Anzahlung"], 
-        ["13:00 - 20:00 Uhr", "150€", "50€ Anzahlung"]
+        ["13:00 - 17:00 Uhr\n100€\n25€ Anzahlung"], 
+        ["17:00 - 20:00 Uhr\n100€\n25€ Anzahlung"], 
+        ["13:00 - 20:00 Uhr\n150€\n50€ Anzahlung"]
     ]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
 
@@ -140,9 +140,8 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Zusammenfassung
     selected_date = get_current_date()
     selected_option = context.user_data["selected_option"]
-    description = context.user_data["description"]
 
-    # Extrahieren der gewählten Kosten und Anzahlung
+    # Extrahieren der gewählten Zeit, Kosten und Anzahlung
     option_lines = selected_option.split("\n")
     selected_time = option_lines[0]  # Die Zeitangabe (erste Zeile)
     selected_cost = option_lines[1]  # Die Kosten (zweite Zeile)
@@ -150,7 +149,7 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     summary = (
         f"Du möchtest am **{selected_date}** zur Zeit **{selected_time}** an meinem Event teilnehmen.\n\n"
-        f"Deine Beschreibung:\n{description}\n\n"
+        f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
         f"Zahlungsmethode: {payment_method}\n\n"
         f"**Kostenübersicht:**\n"
         f"Gesamtkosten: {selected_cost}\n"
