@@ -39,7 +39,9 @@ def set_current_date(new_date: str):
 # Bot-Start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
-    options = [["Option 1", "Option 2"]]
+    
+    # Neue Zeitoptionen definieren
+    options = [["13:00 - 17:00 Uhr"], ["17:00 - 20:00 Uhr"], ["13:00 - 20:00 Uhr"]]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
 
     logger.info(f"Startkommando empfangen von {update.effective_user.first_name}.")
