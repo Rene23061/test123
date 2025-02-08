@@ -1,7 +1,7 @@
 import logging
 import sqlite3
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # Logging aktivieren
 logging.basicConfig(
@@ -12,10 +12,6 @@ logger = logging.getLogger(__name__)
 
 DATABASE_FILE = "event_data.db"
 
-# Phasen der Unterhaltung
-SELECT_OPTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, PAYMENT = range(4)
-
-# Funktion zum Speichern des Event-Datums
 def set_event_date(chat_id: str, new_date: str):
     try:
         connection = sqlite3.connect(DATABASE_FILE)
@@ -34,7 +30,6 @@ def set_event_date(chat_id: str, new_date: str):
     except Exception as e:
         logger.error(f"Fehler beim Setzen des Datums: {e}")
 
-# Funktion zum Abrufen des gespeicherten Event-Datums
 def get_event_date(chat_id: str):
     try:
         connection = sqlite3.connect(DATABASE_FILE)
@@ -48,26 +43,22 @@ def get_event_date(chat_id: str):
         else:
             return "Noch kein Datum gesetzt"
     except Exception as e:
-        logger.error(f"Fehler beim Abrufen des Datums aus der Datenbank: {e}")
+        logger.error(f"Fehler beim Abrufen des Datums: {e}")
         return "Fehler beim Laden des Datums"
 
 # Bot-Start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     current_date = get_event_date(chat_id)
-    options = [["Option 1", "Option 2"]]
-    reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
-
-    logger.info(f"Startkommando empfangen von {update.effective_user.first_name}.")
+    
+    logger.info(f"Startkommando empfangen von {update.effective_user.first_name} in Chat {chat_id}.")
 
     await update.message.reply_text(
         f"Willkommen zur Veranstaltungsbuchung!\n"
-        f"Du möchtest an der Veranstaltung am **{current_date}** teilnehmen.\n"
-        "Bitte wähle einen Zeitraum aus:",
-        reply_markup=reply_markup,
+        f"Das aktuelle Event-Datum ist: **{current_date}**\n"
+        "Nutze /datum, um das Datum zu ändern.",
         parse_mode="Markdown"
     )
-    return SELECT_OPTION
 
 # Datum ändern mit /datum-Befehl
 async def set_event_date_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,13 +77,19 @@ async def set_event_date_command(update: Update, context: ContextTypes.DEFAULT_T
         logger.error(f"Fehler beim Verarbeiten des Datums: {e}")
         await update.message.reply_text("Ein Fehler ist beim Setzen des Datums aufgetreten.")
 
+# /id-Befehl zur Ausgabe der Chat-ID
+async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    await update.message.reply_text(f"Die aktuelle Chat-ID ist: **{chat_id}**", parse_mode="Markdown")
+    logger.info(f"Chat-ID {chat_id} wurde von {update.effective_user.first_name} abgefragt.")
+
 # Hauptprogramm
 if __name__ == "__main__":
     app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
 
-    # /start- und /datum-Befehl registrieren
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("datum", set_event_date_command))
+    app.add_handler(CommandHandler("id", get_chat_id))
 
     logger.info("Bot wird gestartet...")
     app.run_polling()
