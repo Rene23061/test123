@@ -52,7 +52,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     existing_booking_date = has_existing_booking(user_id)
 
     if existing_booking_date:
-        # Benutzer hat bereits eine Buchung, nach Bestätigung fragen
         reply_markup = ReplyKeyboardMarkup([["Ja, neuen Termin buchen", "Nein, abbrechen"]], one_time_keyboard=True)
         await update.message.reply_text(
             escape_markdown_v2(
@@ -64,7 +63,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return CONFIRM_REBOOKING
 
-    # Benutzer hat keine bestehende Buchung
     await proceed_to_booking(update, context)
     return SELECT_OPTION
 
@@ -106,10 +104,7 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
 
     option_lines = user_selection.split("\n")
-    if "150€" in option_lines[1]:
-        selected_deposit = "50€"
-    else:
-        selected_deposit = "25€"
+    selected_deposit = "50€" if "150€" in option_lines[1] else "25€"
 
     reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter (verstanden)"]], one_time_keyboard=True)
     await update.message.reply_text(
@@ -179,6 +174,12 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
     save_booking(update.effective_user.id, selected_date)  # Buchung speichern
 
+    # Bild senden, wenn vorhanden
+    if "photo_id" in context.user_data:
+        photo_id = context.user_data["photo_id"]
+        await update.message.reply_photo(photo_id)
+
+    # Zusammenfassung senden
     summary = escape_markdown_v2(
         f"Du möchtest am **{selected_date}** zur Zeit **{context.user_data['selected_option'].splitlines()[0]}** teilnehmen.\n\n"
         f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
@@ -195,7 +196,7 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif payment_method == "Amazon Gutschein":
         await update.message.reply_text("Sende den Gutschein-Code hier im Chat oder kontaktiere uns.")
 
-    return SUMMARY
+    return ConversationHandler.END
 
 async def fallback_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Entschuldigung, ich habe das nicht verstanden. Bitte verwende eine der Optionen oder /cancel.")
