@@ -152,11 +152,14 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
         return ENTER_DESCRIPTION
 
-    # Verarbeite hochgeladene Bilder (mehrere in einem Upload möglich)
+    # Speichere nur die höchste Auflösung jedes hochgeladenen Bildes
     if update.message.photo:
-        context.user_data["photos"] = [photo.file_id for photo in update.message.photo]
-        await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-        return ENTER_DESCRIPTION
+        context.user_data.setdefault("photos", [])
+        highest_res_photo = update.message.photo[-1].file_id  # Wähle die höchste Auflösung
+        context.user_data["photos"].append(highest_res_photo)
+
+        await update.message.reply_text("Bild gespeichert! Du kannst weitere Bilder hochladen oder **nein** schreiben, um fortzufahren.")
+        return UPLOAD_IMAGE
 
     await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
     return UPLOAD_IMAGE
@@ -177,7 +180,7 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
     save_booking(update.effective_user.id, selected_date)
 
-    # Bilder senden (falls vorhanden)
+    # Bild(er) senden (falls vorhanden)
     if "photos" in context.user_data:
         for photo_id in context.user_data["photos"]:
             await update.message.reply_photo(photo_id)
@@ -202,8 +205,10 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"Buchung von @{user_name}:\n\n{summary}",
             parse_mode="MarkdownV2"
         )
-        for photo_id in context.user_data.get("photos", []):
-            await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
+        # Bild(er) an Admin senden (falls vorhanden)
+        if "photos" in context.user_data:
+            for photo_id in context.user_data["photos"]:
+                await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
 
     await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
     return ConversationHandler.END
