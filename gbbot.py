@@ -66,17 +66,19 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_option"] = user_selection
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
     await update.message.reply_text(
-        escape_markdown_v2("Du kannst jetzt ein Bild hochladen oder schreibe **nein**."),
+        escape_markdown_v2("Du kannst jetzt ein Bild hochladen oder schreibe **nein**, um fortzufahren."),
         parse_mode="MarkdownV2"
     )
     return UPLOAD_IMAGE
 
 # Bild hochladen oder überspringen
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text.lower() == "nein":
-        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich.")
+    # Prüfen, ob die Nachricht Text enthält und ob es "nein" ist
+    if update.message.text and update.message.text.lower() == "nein":
+        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
         return ENTER_DESCRIPTION
 
+    # Prüfen, ob ein Bild hochgeladen wurde
     if update.message.photo:
         try:
             photo_file = await update.message.photo[-1].get_file()
@@ -84,15 +86,16 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await photo_file.download_to_drive(file_path)
             context.user_data["photo_path"] = file_path
             logger.info(f"Bild erfolgreich heruntergeladen: {file_path}")
-            await update.message.reply_text("Bild erhalten! Bitte beschreibe dich.")
+            await update.message.reply_text("Bild erhalten! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
             return ENTER_DESCRIPTION
         except Exception as e:
             logger.error(f"Fehler beim Hochladen des Bildes: {e}")
-            await update.message.reply_text("Fehler beim Hochladen. Versuche es erneut oder schreibe **nein**.")
+            await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
             return UPLOAD_IMAGE
-    else:
-        await update.message.reply_text("Lade ein gültiges Bild hoch oder schreibe **nein**.")
-        return UPLOAD_IMAGE
+
+    # Wenn weder Text noch Bild vorhanden ist
+    await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
+    return UPLOAD_IMAGE
 
 # Beschreibung eingeben
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
