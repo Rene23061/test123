@@ -40,8 +40,12 @@ def set_current_date(new_date: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
     
-    # Neue Zeitoptionen definieren
-    options = [["13:00 - 17:00 Uhr"], ["17:00 - 20:00 Uhr"], ["13:00 - 20:00 Uhr"]]
+    # Zeitoptionen mit Preisen definieren
+    options = [
+        ["13:00 - 17:00 Uhr\n100€"], 
+        ["17:00 - 20:00 Uhr\n100€"], 
+        ["13:00 - 20:00 Uhr\n150€"]
+    ]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
 
     logger.info(f"Startkommando empfangen von {update.effective_user.first_name}.")
