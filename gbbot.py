@@ -58,18 +58,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return SELECT_OPTION
 
-async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    payment_method = update.message.text
-    context.user_data["payment_method"] = payment_method
-
-    logger.info(f"Zahlungsmethode gewählt: {payment_method}")
-
-    await update.message.reply_text(
-        f"Wie möchtest du gerne abzahlen? Gewählte Methode: {payment_method}",
-        parse_mode="Markdown"
-    )
-
-    return SELECT_PAYMENT
+async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if context.args:
+            new_date = " ".join(context.args)
+            if len(new_date.split(".")) == 3:
+                set_current_date(new_date)
+                await update.message.reply_text(f"Das Veranstaltungsdatum wurde auf **{new_date}** geändert.", parse_mode="Markdown")
+                logger.info(f"Veranstaltungsdatum durch Benutzer {update.effective_user.first_name} geändert: {new_date}")
+                await start(update, context)
+            else:
+                await update.message.reply_text("Das angegebene Datum hat nicht das richtige Format. Bitte gib es im Format TT.MM.JJJJ ein.")
+                logger.warning("Falsches Datumformat erkannt.")
+        else:
+            await update.message.reply_text("Bitte gib das Datum im Format `/datum TT.MM.JJJJ` ein.")
+            logger.warning("Datum wurde nicht übergeben.")
+    except Exception as e:
+        logger.error(f"Fehler beim Verarbeiten des Datums: {e}")
+        await update.message.reply_text("Es ist ein Fehler beim Setzen des Datums aufgetreten.")
 
 async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
@@ -84,6 +90,24 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return UPLOAD_IMAGE
 
+# Bild hochladen oder überspringen
+async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text.lower() == "nein":
+        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        return ENTER_DESCRIPTION
+    
+    try:
+        photo_file = update.message.photo[-1].file_id  # Letztes (höchste Auflösung)
+        context.user_data["photo"] = photo_file  # Speichere das Bild
+        logger.info("Bild erfolgreich empfangen und gespeichert.")
+
+        await update.message.reply_text("Bild erhalten! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        return ENTER_DESCRIPTION
+    except Exception as e:
+        logger.error(f"Fehler beim Verarbeiten des hochgeladenen Bildes: {e}")
+        await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
+        return UPLOAD_IMAGE
+
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
     context.user_data["description"] = description
@@ -91,18 +115,21 @@ async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Beschreibung erhalten: {description}")
 
     await update.message.reply_text(
-        "Bitte wähle eine Zahlungsmethode aus:",
+        "Wie möchtest du gerne abzahlen?",
         parse_mode="Markdown"
     )
     return SELECT_PAYMENT
 
-async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    payment_method = update.message.text
+    context.user_data["payment_method"] = payment_method
+
+    logger.info(f"Zahlungsmethode gewählt: {payment_method}")
+
+    # Zusammenfassung
     selected_date = get_current_date()
     selected_option = context.user_data["selected_option"]
     description = context.user_data["description"]
-    payment_method = context.user_data["payment_method"]
-
-    # Preis und Anzahlung extrahieren
     price = selected_option.split("\n")[1]
     deposit = selected_option.split("\n")[2]
 
@@ -117,7 +144,14 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(summary, parse_mode="Markdown")
+
     return SUMMARY
+
+# Beenden des Gesprächs
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Gespräch abgebrochen von Benutzer {update.effective_user.first_name}.")
+    await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben, um von vorne zu beginnen.")
+    return ConversationHandler.END
 
 # Hauptprogramm
 if __name__ == "__main__":
