@@ -19,19 +19,25 @@ SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMEN
 
 DATE_FILE = "event_date.txt"
 USER_BOOKINGS_FILE = "user_bookings.txt"
+ADMIN_ID_FILE = "admin_id.txt"
 
 def get_current_date():
     try:
         with open(DATE_FILE, "r") as file:
             date = file.read().strip()
-            logger.info(f"Datum erfolgreich aus Datei gelesen: {date}")
             return date if date else "Noch kein Datum gesetzt"
     except FileNotFoundError:
-        logger.warning("Datei für Veranstaltungsdatum nicht gefunden, Standardwert verwenden.")
         return "Noch kein Datum gesetzt"
-    except Exception as e:
-        logger.error(f"Fehler beim Lesen des Datums: {e}")
-        return "Fehler beim Laden des Datums"
+
+def get_admin_id():
+    if os.path.exists(ADMIN_ID_FILE):
+        with open(ADMIN_ID_FILE, "r") as file:
+            return file.read().strip()
+    return None
+
+def save_admin_id(admin_id: str):
+    with open(ADMIN_ID_FILE, "w") as file:
+        file.write(admin_id)
 
 def has_existing_booking(user_id: int):
     if os.path.exists(USER_BOOKINGS_FILE):
@@ -39,13 +45,12 @@ def has_existing_booking(user_id: int):
             for line in file:
                 stored_user_id, stored_date = line.strip().split(": ")
                 if str(user_id) == stored_user_id:
-                    return stored_date  # Benutzer hat bereits eine Buchung
-    return None  # Keine Buchung gefunden
+                    return stored_date
+    return None
 
 def save_booking(user_id: int, date: str):
     with open(USER_BOOKINGS_FILE, "a") as file:
         file.write(f"{user_id}: {date}\n")
-    logger.info(f"Buchung gespeichert: UserID={user_id}, Datum={date}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -75,9 +80,6 @@ async def confirm_rebooking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif user_choice == "Nein, abbrechen":
         await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
         return ConversationHandler.END
-    else:
-        await update.message.reply_text("Bitte wähle entweder 'Ja, neuen Termin buchen' oder 'Nein, abbrechen'.")
-        return CONFIRM_REBOOKING
 
 async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
@@ -101,7 +103,6 @@ async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
     context.user_data["selected_option"] = user_selection
-    logger.info(f"Benutzer hat Option gewählt: {user_selection}")
 
     option_lines = user_selection.split("\n")
     selected_deposit = "50€" if "150€" in option_lines[1] else "25€"
@@ -131,35 +132,24 @@ async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="MarkdownV2"
         )
         return UPLOAD_IMAGE
-    else:
-        await update.message.reply_text("Bitte wähle entweder 'Zurück' oder 'Weiter (verstanden)'.")
-        return CONFIRM_SELECTION
 
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text and update.message.text.lower() == "nein":
-        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-        return ENTER_DESCRIPTION
+    if "photos" not in context.user_data:
+        context.user_data["photos"] = []
 
     if update.message.photo:
-        try:
-            photo_file_id = update.message.photo[-1].file_id
-            context.user_data["photo_id"] = photo_file_id
-            logger.info(f"Bild erfolgreich empfangen: {photo_file_id}")
+        photo_file_id = update.message.photo[-1].file_id
+        context.user_data["photos"].append(photo_file_id)
+        await update.message.reply_text("Bild gespeichert! Du kannst noch weitere Bilder hochladen oder **nein** schreiben, um fortzufahren.")
+        return UPLOAD_IMAGE
 
-            await update.message.reply_text("Bild erhalten! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-            return ENTER_DESCRIPTION
-        except Exception as e:
-            logger.error(f"Fehler beim Verarbeiten des hochgeladenen Bildes: {e}")
-            await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
-            return UPLOAD_IMAGE
-
-    await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
-    return UPLOAD_IMAGE
+    if update.message.text and update.message.text.lower() == "nein":
+        await update.message.reply_text("Bilder-Upload abgeschlossen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        return ENTER_DESCRIPTION
 
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
     context.user_data["description"] = description
-    logger.info(f"Beschreibung erhalten: {description}")
 
     payment_options = [["Revolut", "PayPal"], ["Amazon Gutschein"]]
     reply_markup = ReplyKeyboardMarkup(payment_options, one_time_keyboard=True)
@@ -169,17 +159,15 @@ async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payment_method = update.message.text
     context.user_data["payment_method"] = payment_method
-    logger.info(f"Zahlungsmethode gewählt: {payment_method}")
 
     selected_date = get_current_date()
-    save_booking(update.effective_user.id, selected_date)  # Buchung speichern
+    save_booking(update.effective_user.id, selected_date)
 
-    # Bild senden, wenn vorhanden
-    if "photo_id" in context.user_data:
-        photo_id = context.user_data["photo_id"]
-        await update.message.reply_photo(photo_id)
+    # Bilder senden
+    if "photos" in context.user_data:
+        for photo_id in context.user_data["photos"]:
+            await update.message.reply_photo(photo_id)
 
-    # Zusammenfassung senden
     summary = escape_markdown_v2(
         f"Du möchtest am **{selected_date}** zur Zeit **{context.user_data['selected_option'].splitlines()[0]}** teilnehmen.\n\n"
         f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
@@ -189,22 +177,30 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(summary, parse_mode="MarkdownV2")
 
-    if payment_method == "PayPal":
-        await update.message.reply_text("Bitte überweise an **paypal@example.com**.")
-    elif payment_method == "Revolut":
-        await update.message.reply_text("Bitte überweise an IBAN **DE123456789**.")
-    elif payment_method == "Amazon Gutschein":
-        await update.message.reply_text("Sende den Gutschein-Code hier im Chat oder kontaktiere uns.")
+    # Admin informieren
+    admin_id = get_admin_id()
+    if admin_id:
+        await context.bot.send_message(
+            chat_id=int(admin_id),
+            text=f"Buchung von User {update.effective_user.first_name}:\n\n{summary}",
+            parse_mode="MarkdownV2"
+        )
+        for photo_id in context.user_data["photos"]:
+            await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
 
+    await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
     return ConversationHandler.END
 
-async def fallback_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Entschuldigung, ich habe das nicht verstanden. Bitte verwende eine der Optionen oder /cancel.")
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Deine ID ist: {update.effective_user.id}")
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Gespräch abgebrochen von Benutzer {update.effective_user.first_name}.")
-    await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
-    return ConversationHandler.END
+async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) != 1:
+        await update.message.reply_text("Bitte gib die Admin-ID an: /setadmin <Admin-ID>")
+        return
+
+    save_admin_id(context.args[0])
+    await update.message.reply_text(f"Admin-ID wurde erfolgreich auf {context.args[0]} gesetzt.")
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
@@ -224,5 +220,8 @@ if __name__ == "__main__":
     )
 
     app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("id", get_id))
+    app.add_handler(CommandHandler("setadmin", set_admin))
+
     logger.info("Bot wird gestartet...")
     app.run_polling()
