@@ -40,11 +40,11 @@ def set_current_date(new_date: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
     
-    # Zeitoptionen mit Preisen definieren
+    # Zeitoptionen mit Preisen und Anzahlungen definieren
     options = [
-        ["13:00 - 17:00 Uhr\n100€"], 
-        ["17:00 - 20:00 Uhr\n100€"], 
-        ["13:00 - 20:00 Uhr\n150€"]
+        ["13:00 - 17:00 Uhr\n100€\n25€ Anzahlung"], 
+        ["17:00 - 20:00 Uhr\n100€\n25€ Anzahlung"], 
+        ["13:00 - 20:00 Uhr\n150€\n50€ Anzahlung"]
     ]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
 
@@ -125,7 +125,7 @@ async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(payment_options, one_time_keyboard=True)
 
     await update.message.reply_text(
-        "Bitte wähle eine Zahlungsmethode aus:",
+        "Wie möchtest du gern die Anzahlung leisten?",
         reply_markup=reply_markup
     )
     return SELECT_PAYMENT
@@ -139,55 +139,10 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Zusammenfassung
     selected_date = get_current_date()
-    selected_option = context.user_data["selected_option"]
+    selected_option = context.user_data["selected_option"].split('\n')[0]  # Nur die Zeitspanne extrahieren
     description = context.user_data["description"]
 
     summary = (
         f"Du möchtest am **{selected_date}** zu der Zeit **{selected_option}** zu meinem Event kommen.\n\n"
         f"Deine Beschreibung:\n{description}\n\n"
-        f"Zahlungsmethode: {payment_method}"
-    )
-
-    await update.message.reply_text(summary, parse_mode="Markdown")
-
-    # Anweisungen zur Zahlung
-    if payment_method == "PayPal":
-        await update.message.reply_text("Bitte überweise den Betrag an **paypal@example.com**.")
-    elif payment_method == "Revolut":
-        await update.message.reply_text("Bitte überweise den Betrag an IBAN **DE123456789**.")
-    elif payment_method == "Amazon Gutschein":
-        await update.message.reply_text(
-            "Bitte sende den Gutschein-Code hier im Chat oder kontaktiere uns direkt."
-        )
-
-    return SUMMARY
-
-# Beenden des Gesprächs
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Gespräch abgebrochen von Benutzer {update.effective_user.first_name}.")
-    await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben, um von vorne zu beginnen.")
-    return ConversationHandler.END
-
-# Hauptprogramm
-if __name__ == "__main__":
-    app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
-
-    # Gesprächssteuerung
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
-            UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
-            ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
-            SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
-            SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-
-    # Handler für Datum setzen
-    app.add_handler(CommandHandler("datum", set_event_date))
-    app.add_handler(conv_handler)
-
-    logger.info("Bot wird gestartet...")
-    app.run_polling()
+        f"Z 
