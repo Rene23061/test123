@@ -39,36 +39,19 @@ def set_current_date(new_date: str):
 # Bot-Start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
-    user = update.effective_user
+    options = [["Option 1", "Option 2"]]
+    reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
 
-    # Überprüfe, ob Parameter beim Start mitgegeben wurden
-    if context.args:
-        parameter = " ".join(context.args)  # Empfange den Start-Parameter
-        logger.info(f"Startparameter empfangen: {parameter} von {user.first_name}")
+    logger.info(f"Startkommando empfangen von {update.effective_user.first_name}.")
 
-        if parameter == "TerminBuchen":
-            # Automatisches Starten des Buchungsprozesses
-            options = [["Option 1", "Option 2"]]
-            reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
-
-            await update.message.reply_text(
-                f"Willkommen zur Veranstaltungsbuchung!\n"
-                f"Du möchtest an der Veranstaltung am **{current_date}** teilnehmen.\n"
-                "Bitte wähle einen Zeitraum aus:",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
-            return SELECT_OPTION
-        else:
-            await update.message.reply_text("Unbekannter Startparameter. Bitte versuche es erneut.")
-            return ConversationHandler.END
-
-    # Standardfall, wenn kein Parameter übergeben wird
     await update.message.reply_text(
-        f"Willkommen beim Veranstaltungs-Bot!\n"
-        f"Das aktuelle Veranstaltungsdatum ist: **{current_date}**.\n"
-        "Gib `/datum TT.MM.JJJJ` ein, um ein neues Datum zu setzen."
+        f"Willkommen zur Veranstaltungsbuchung!\n"
+        f"Du möchtest an der Veranstaltung am **{current_date}** teilnehmen.\n"
+        "Bitte wähle einen Zeitraum aus:",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
     )
+    return SELECT_OPTION
 
 # Datum ändern
 async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,7 +125,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Hauptprogramm
 if __name__ == "__main__":
-    app = ApplicationBuilder().token("YOUR_BOT_TOKEN_HERE").build()
+    app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
 
     # Gesprächssteuerung
     conv_handler = ConversationHandler(
