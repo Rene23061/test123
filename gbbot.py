@@ -152,17 +152,14 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
         return ENTER_DESCRIPTION
 
-    # Falls mehrere Bilder hochgeladen wurden, verarbeite alle
+    # Speichere die höchste Auflösung des letzten Bildes
     if update.message.photo:
         context.user_data.setdefault("photos", [])
-        for photo in update.message.photo:
-            context.user_data["photos"].append(photo.file_id)
+        highest_res_photo = update.message.photo[-1].file_id  # Wähle die höchste Auflösung des aktuellen Bildes
+        context.user_data["photos"].append(highest_res_photo)
 
-        await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-        return ENTER_DESCRIPTION
-
-    await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
-    return UPLOAD_IMAGE
+    await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+    return ENTER_DESCRIPTION
 
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
@@ -180,7 +177,7 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
     save_booking(update.effective_user.id, selected_date)
 
-    # Bild(er) senden (falls vorhanden)
+    # Sende alle gespeicherten Bilder (höchste Auflösung jedes Bildes)
     if "photos" in context.user_data:
         for photo_id in context.user_data["photos"]:
             await update.message.reply_photo(photo_id)
@@ -205,7 +202,7 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"Buchung von @{user_name}:\n\n{summary}",
             parse_mode="MarkdownV2"
         )
-        # Bild(er) an Admin senden (falls vorhanden)
+        # Sende die Bilder an den Admin
         if "photos" in context.user_data:
             for photo_id in context.user_data["photos"]:
                 await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
@@ -245,7 +242,7 @@ if __name__ == "__main__":
             CONFIRM_REBOOKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_rebooking)],
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
             CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
-            UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
+            UPLOAD_IMAGE: [MessageHandler(filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)]
         },
