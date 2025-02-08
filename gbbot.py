@@ -79,7 +79,7 @@ async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
-    context.user_data["selected_option"] = user_selection  # Speichere die Auswahl
+    context.user_data["selected_option"] = user_selection
 
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
 
@@ -126,14 +126,18 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Zahlungsmethode gewählt: {payment_method}")
 
-    # Zusammenfassung
+    return SELECT_PAYMENT
+
+async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
     selected_option = context.user_data["selected_option"]
     description = context.user_data["description"]
+    payment_method = context.user_data["payment_method"]
+    
     price = selected_option.split("\n")[1]
     deposit = selected_option.split("\n")[2]
 
-    summary = (
+    summary_text = (
         f"Zusammenfassung deiner Buchung:\n\n"
         f"Eventdatum: **{selected_date}**\n"
         f"Zeitoption: **{selected_option.split('\\n')[0]}**\n"
@@ -143,9 +147,8 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Bitte leiste die Anzahlung innerhalb der nächsten 48 Stunden, um deine Teilnahme zu garantieren."
     )
 
-    await update.message.reply_text(summary, parse_mode="Markdown")
-
-    return SUMMARY
+    await update.message.reply_text(summary_text, parse_mode="Markdown")
+    return ConversationHandler.END
 
 # Beenden des Gesprächs
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
