@@ -36,6 +36,7 @@ def set_current_date(new_date: str):
     except Exception as e:
         logger.error(f"Fehler beim Setzen des Datums: {e}")
 
+# Bot-Start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
     
@@ -58,14 +59,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return SELECT_OPTION
 
+# Datum ändern
 async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if context.args:
             new_date = " ".join(context.args)
+
             if len(new_date.split(".")) == 3:
                 set_current_date(new_date)
                 await update.message.reply_text(f"Das Veranstaltungsdatum wurde auf **{new_date}** geändert.", parse_mode="Markdown")
                 logger.info(f"Veranstaltungsdatum durch Benutzer {update.effective_user.first_name} geändert: {new_date}")
+
                 await start(update, context)
             else:
                 await update.message.reply_text("Das angegebene Datum hat nicht das richtige Format. Bitte gib es im Format TT.MM.JJJJ ein.")
@@ -77,9 +81,10 @@ async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Fehler beim Verarbeiten des Datums: {e}")
         await update.message.reply_text("Es ist ein Fehler beim Setzen des Datums aufgetreten.")
 
+# Option auswählen
 async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
-    context.user_data["selected_option"] = user_selection
+    context.user_data["selected_option"] = user_selection  # Speichere die Auswahl
 
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
 
@@ -108,47 +113,54 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
         return UPLOAD_IMAGE
 
+# Beschreibung eingeben
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
     context.user_data["description"] = description
 
     logger.info(f"Beschreibung erhalten: {description}")
 
+    # Auswahl der Zahlungsmethode
+    payment_options = [["Revolut", "PayPal"], ["Amazon Gutschein"]]
+    reply_markup = ReplyKeyboardMarkup(payment_options, one_time_keyboard=True)
+
     await update.message.reply_text(
-        "Wie möchtest du gerne abzahlen?",
-        parse_mode="Markdown"
+        "Bitte wähle eine Zahlungsmethode aus:",
+        reply_markup=reply_markup
     )
     return SELECT_PAYMENT
 
+# Zahlungsmethode auswählen
 async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payment_method = update.message.text
     context.user_data["payment_method"] = payment_method
 
     logger.info(f"Zahlungsmethode gewählt: {payment_method}")
 
-    return SELECT_PAYMENT
-
-async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Zusammenfassung
     selected_date = get_current_date()
     selected_option = context.user_data["selected_option"]
     description = context.user_data["description"]
-    payment_method = context.user_data["payment_method"]
-    
-    price = selected_option.split("\n")[1]
-    deposit = selected_option.split("\n")[2]
 
-    summary_text = (
-        f"Zusammenfassung deiner Buchung:\n\n"
-        f"Eventdatum: **{selected_date}**\n"
-        f"Zeitoption: **{selected_option.split('\\n')[0]}**\n"
-        f"Beschreibung: {description}\n"
-        f"Zahlungsmethode: {payment_method}\n\n"
-        f"Gesamtpreis: {price}, davon Anzahlung: {deposit}\n"
-        "Bitte leiste die Anzahlung innerhalb der nächsten 48 Stunden, um deine Teilnahme zu garantieren."
+    summary = (
+        f"Du möchtest am **{selected_date}** zu der Zeit **{selected_option}** zu meinem Event kommen.\n\n"
+        f"Deine Beschreibung:\n{description}\n\n"
+        f"Zahlungsmethode: {payment_method}"
     )
 
-    await update.message.reply_text(summary_text, parse_mode="Markdown")
-    return ConversationHandler.END
+    await update.message.reply_text(summary, parse_mode="Markdown")
+
+    # Anweisungen zur Zahlung
+    if payment_method == "PayPal":
+        await update.message.reply_text("Bitte überweise den Betrag an **paypal@example.com**.")
+    elif payment_method == "Revolut":
+        await update.message.reply_text("Bitte überweise den Betrag an IBAN **DE123456789**.")
+    elif payment_method == "Amazon Gutschein":
+        await update.message.reply_text(
+            "Bitte sende den Gutschein-Code hier im Chat oder kontaktiere uns direkt."
+        )
+
+    return SUMMARY
 
 # Beenden des Gesprächs
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -160,6 +172,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
 
+    # Gesprächssteuerung
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -167,11 +180,12 @@ if __name__ == "__main__":
             UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
-            SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, summary)]
+            SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel)]
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
+    # Handler für Datum setzen
     app.add_handler(CommandHandler("datum", set_event_date))
     app.add_handler(conv_handler)
 
