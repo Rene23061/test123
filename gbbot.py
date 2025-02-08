@@ -1,5 +1,6 @@
 import logging
 import re
+import os
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, CallbackQueryHandler, filters
 
@@ -14,9 +15,10 @@ def escape_markdown_v2(text: str) -> str:
     return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 # Phasen der Unterhaltung
-SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, SUMMARY = range(6)
+SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, SUMMARY, CONFIRM_REBOOKING = range(7)
 
 DATE_FILE = "event_date.txt"
+USER_BOOKINGS_FILE = "user_bookings.txt"
 
 def get_current_date():
     try:
@@ -31,10 +33,57 @@ def get_current_date():
         logger.error(f"Fehler beim Lesen des Datums: {e}")
         return "Fehler beim Laden des Datums"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
-    logger.info(f"Benutzerdaten für {update.effective_user.first_name} wurden zurückgesetzt.")
+def has_existing_booking(user_id: int):
+    if os.path.exists(USER_BOOKINGS_FILE):
+        with open(USER_BOOKINGS_FILE, "r") as file:
+            for line in file:
+                stored_user_id, stored_date = line.strip().split(": ")
+                if str(user_id) == stored_user_id:
+                    return stored_date  # Benutzer hat bereits eine Buchung
+    return None  # Keine Buchung gefunden
 
+def save_booking(user_id: int, date: str):
+    with open(USER_BOOKINGS_FILE, "a") as file:
+        file.write(f"{user_id}: {date}\n")
+    logger.info(f"Buchung gespeichert: UserID={user_id}, Datum={date}")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    existing_booking_date = has_existing_booking(user_id)
+
+    if existing_booking_date:
+        # Benutzer hat bereits eine Buchung, nach Bestätigung fragen
+        keyboard = [
+            [InlineKeyboardButton("Ja, neuen Termin buchen", callback_data="new_booking")],
+            [InlineKeyboardButton("Nein, abbrechen", callback_data="cancel")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            escape_markdown_v2(
+                f"Du hast bereits einen Termin am **{existing_booking_date}** gebucht.\n"
+                "Möchtest du einen weiteren Termin buchen?"
+            ),
+            reply_markup=reply_markup,
+            parse_mode="MarkdownV2"
+        )
+        return CONFIRM_REBOOKING
+
+    # Benutzer hat keine bestehende Buchung
+    await proceed_to_booking(update, context)
+    return SELECT_OPTION
+
+async def confirm_rebooking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "new_booking":
+        await query.edit_message_text("Okay, lass uns mit der neuen Buchung starten!")
+        return await proceed_to_booking(update, context)
+    elif query.data == "cancel":
+        await query.edit_message_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
+        return ConversationHandler.END
+
+async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
     options = [
         ["13:00 - 17:00 Uhr\n100€"], 
@@ -84,11 +133,13 @@ async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "back":
-        return await start(query, context)
+        return await proceed_to_booking(update, context)
     elif query.data == "continue":
         await query.edit_message_text(
-            "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
-            "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**.",
+            escape_markdown_v2(
+                "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
+                "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**."
+            ),
             parse_mode="MarkdownV2"
         )
         return UPLOAD_IMAGE
@@ -130,21 +181,12 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Zahlungsmethode gewählt: {payment_method}")
 
     selected_date = get_current_date()
-    selected_option = context.user_data["selected_option"]
-    option_lines = selected_option.split("\n")
-    selected_time, selected_cost = option_lines[0], option_lines[1]
-
-    # Falls ein Bild hochgeladen wurde, sende es zuerst
-    if "photo_id" in context.user_data:
-        photo_id = context.user_data["photo_id"]
-        await update.message.reply_photo(photo_id)
+    save_booking(update.effective_user.id, selected_date)  # Buchung speichern
 
     summary = escape_markdown_v2(
-        f"Du möchtest am **{selected_date}** zur Zeit **{selected_time}** teilnehmen.\n\n"
+        f"Du möchtest am **{selected_date}** zur Zeit **{context.user_data['selected_option'].splitlines()[0]}** teilnehmen.\n\n"
         f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
         f"Zahlungsmethode: {payment_method}\n\n"
-        f"**Kostenübersicht:**\n"
-        f"Gesamtkosten: {selected_cost}\n"
         "Ohne Anzahlung innerhalb der nächsten 48 Stunden ist keine Teilnahme garantiert."
     )
 
@@ -167,24 +209,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
     return ConversationHandler.END
 
-async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 1:
-        await update.message.reply_text("Bitte gib ein gültiges Datum im Format 'YYYY-MM-DD' an.")
-        return
-
-    new_date = context.args[0]
-    set_current_date(new_date)
-    await update.message.reply_text(
-        escape_markdown_v2(f"Das neue Veranstaltungsdatum wurde auf **{new_date}** gesetzt."),
-        parse_mode="MarkdownV2"
-    )
-
 if __name__ == "__main__":
     app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            CONFIRM_REBOOKING: [CallbackQueryHandler(confirm_rebooking)],
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
             CONFIRM_SELECTION: [CallbackQueryHandler(confirm_selection)],
             UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
@@ -195,8 +226,6 @@ if __name__ == "__main__":
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
-    app.add_handler(CommandHandler("datum", set_event_date))
     app.add_handler(conv_handler)
-
     logger.info("Bot wird gestartet...")
     app.run_polling()
