@@ -64,6 +64,9 @@ async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 set_current_date(new_date)
                 await update.message.reply_text(f"Das Veranstaltungsdatum wurde auf **{new_date}** geändert.", parse_mode="Markdown")
                 logger.info(f"Veranstaltungsdatum durch Benutzer {update.effective_user.first_name} geändert: {new_date}")
+
+                # Automatisch den Buchungsprozess nach dem Datum starten
+                await start(update, context)
             else:
                 await update.message.reply_text("Das angegebene Datum hat nicht das richtige Format. Bitte gib es im Format TT.MM.JJJJ ein.")
                 logger.warning("Falsches Datumformat erkannt.")
