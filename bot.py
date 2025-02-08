@@ -6,15 +6,16 @@ TOKEN = "7622465777:AAFmKGf99ARh22mmw4Ex2jAdU2MBCZIs7VY"
 
 # Themen mit Regeln (message_thread_id)
 THEMEN_REGELN = {
-    "lesen_nur": [2, 3, 913, 914],      # Thema mit ID 4 → Nur Lesen erlaubt (löscht alle Nachrichten von Nicht-Admins)
-    "medien_only": [912],    # Thema mit ID 2 → Nur Bilder/Videos erlaubt
-    "links_erlaubt": [911, 1049], # Thema mit ID 59 → Alle Links werden gelöscht
+    "lesen_nur": [2, 3, 913, 914],      # Nur Lesen erlaubt (löscht alle Nachrichten von Nicht-Admins)
+    "medien_only": [912],    # Nur Bilder/Videos erlaubt
+    "links_erlaubt": [911, 1049],  # Alle Links werden gelöscht, außer erlaubte
 }
+
 # Liste mit erlaubten Links
 ERLAUBTE_LINKS = [
-    "https://t.me/+oADbpc7pjyY2NDcy",  # Dieser Link wird nicht gelöscht
-    "https://t.me/+5LKWu1RZHrU5ZGUy",  # Noch ein erlaubter Link
-    "https://t.me/+qgzN9e4x42k1NzQy",  # Ein weiterer Link
+    "https://t.me/+oADbpc7pjyY2NDcy",
+    "https://t.me/+5LKWu1RZHrU5ZGUy",
+    "https://t.me/+qgzN9e4x42k1NzQy",
     "https://t.me/+uj_H5Ikzfzg4OTVi",
     "https://t.me/+2N4rEE4TiVQ0M2Qy",
     "https://t.me/+vjLkkXIk7qZlNDdi",
@@ -25,6 +26,7 @@ ERLAUBTE_LINKS = [
     "https://t.me/+zR0wr1A4BnZhMzFi",
     "https://t.me/+tjOhC2Zw9EFmOGIy"
 ]
+
 # Regulärer Ausdruck zur Erkennung von URLs
 URL_PATTERN = re.compile(
     r'((http|https):\/\/)?'  # optionales Protokoll
@@ -75,11 +77,17 @@ async def kontrolliere_nachricht(update: Update, context: CallbackContext):
     elif topic_id in THEMEN_REGELN["links_erlaubt"]:
         erkannte_kategorie = "links_erlaubt (Alle Links werden gelöscht)"
 
-        # Verbesserte Link-Erkennung mit Ausnahme der erlaubten Links
-        enthaelt_link = bool(URL_PATTERN.search(text)) and not any(link in text for link in ERLAUBTE_LINKS)
+        # Verbesserte Linkprüfung: Nur den exakten Link oder Varianten davon akzeptieren
+        gefundene_links = [match.group(0) for match in URL_PATTERN.finditer(text)]
 
-        if enthaelt_link:
-            print(f"❌ Link gefunden und gelöscht: {text}")
+        # Prüfen, ob einer der gefundenen Links nicht erlaubt ist
+        enthaelt_verbotene_links = any(
+            not any(re.fullmatch(re.escape(erlaubter_link) + r'[\S]*', gefundener_link) for erlaubter_link in ERLAUBTE_LINKS)
+            for gefundener_link in gefundene_links
+        )
+
+        if enthaelt_verbotene_links:
+            print(f"❌ Verbotener Link gefunden und gelöscht: {text}")
             await context.bot.delete_message(chat_id, message.message_id)
             # Nachricht an den Benutzer senden, warum sie gelöscht wurde
             await context.bot.send_message(
