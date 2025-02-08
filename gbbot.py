@@ -11,7 +11,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Phasen der Unterhaltung
-SELECT_OPTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, PAYMENT = range(4)
+SELECT_OPTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, SUMMARY = range(5)
 
 DATE_FILE = "event_date.txt"
 
@@ -65,20 +65,18 @@ async def set_event_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.args:
             new_date = " ".join(context.args)
 
-            # Überprüfen, ob das Datum im Format TT.MM.JJJJ sein könnte
             if len(new_date.split(".")) == 3:
                 set_current_date(new_date)
                 await update.message.reply_text(f"Das Veranstaltungsdatum wurde auf **{new_date}** geändert.", parse_mode="Markdown")
                 logger.info(f"Veranstaltungsdatum durch Benutzer {update.effective_user.first_name} geändert: {new_date}")
 
-                # Automatisch den Buchungsprozess nach dem Datum starten
                 await start(update, context)
             else:
                 await update.message.reply_text("Das angegebene Datum hat nicht das richtige Format. Bitte gib es im Format TT.MM.JJJJ ein.")
                 logger.warning("Falsches Datumformat erkannt.")
         else:
             await update.message.reply_text("Bitte gib das Datum im Format `/datum TT.MM.JJJJ` ein.")
-            logger.warning("Datum wurde nicht übergeben. Falsches Format oder fehlende Argumente.")
+            logger.warning("Datum wurde nicht übergeben.")
     except Exception as e:
         logger.error(f"Fehler beim Verarbeiten des Datums: {e}")
         await update.message.reply_text("Es ist ein Fehler beim Setzen des Datums aufgetreten.")
@@ -90,20 +88,30 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Benutzer hat Option gewählt: {user_selection}")
 
-    await update.message.reply_text(f"Du hast '{user_selection}' gewählt. Bitte lade jetzt ein Bild hoch.")
+    await update.message.reply_text(
+        "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
+        "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**.",
+        parse_mode="Markdown"
+    )
     return UPLOAD_IMAGE
 
-# Bild hochladen
+# Bild hochladen oder überspringen
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text.lower() == "nein":
+        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        return ENTER_DESCRIPTION
+    
     try:
         photo_file = update.message.photo[-1].file_id  # Letztes (höchste Auflösung)
         context.user_data["photo"] = photo_file  # Speichere das Bild
         logger.info("Bild erfolgreich empfangen und gespeichert.")
 
-        await update.message.reply_text("Bild erhalten! Bitte gib jetzt eine kurze Beschreibung ein.")
+        await update.message.reply_text("Bild erhalten! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
         return ENTER_DESCRIPTION
     except Exception as e:
         logger.error(f"Fehler beim Verarbeiten des hochgeladenen Bildes: {e}")
+        await update.message.reply_text("Es gab ein Problem beim Hochladen des Bildes. Bitte versuche es erneut oder schreibe **nein**, um fortzufahren.")
+        return UPLOAD_IMAGE
 
 # Beschreibung eingeben
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,19 +120,47 @@ async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Beschreibung erhalten: {description}")
 
+    # Auswahl der Zahlungsmethode
+    payment_options = [["Revolut", "PayPal"], ["Amazon Gutschein"]]
+    reply_markup = ReplyKeyboardMarkup(payment_options, one_time_keyboard=True)
+
     await update.message.reply_text(
-        "Danke! Hier sind deine Angaben:\n"
-        f"Option: {context.user_data['selected_option']}\n"
-        f"Beschreibung: {description}\n\n"
-        "Zum Abschließen der Buchung überweise bitte die Anzahlung."
+        "Bitte wähle eine Zahlungsmethode aus:",
+        reply_markup=reply_markup
+    )
+    return SELECT_PAYMENT
+
+# Zahlungsmethode auswählen
+async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    payment_method = update.message.text
+    context.user_data["payment_method"] = payment_method
+
+    logger.info(f"Zahlungsmethode gewählt: {payment_method}")
+
+    # Zusammenfassung
+    selected_date = get_current_date()
+    selected_option = context.user_data["selected_option"]
+    description = context.user_data["description"]
+
+    summary = (
+        f"Du möchtest am **{selected_date}** zu der Zeit **{selected_option}** zu meinem Event kommen.\n\n"
+        f"Deine Beschreibung:\n{description}\n\n"
+        f"Zahlungsmethode: {payment_method}"
     )
 
-    # Zeige ein Beispiel-Bild an (falls nötig)
-    photo_id = context.user_data["photo"]
-    await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo_id)
+    await update.message.reply_text(summary, parse_mode="Markdown")
 
-    await update.message.reply_text("Hier wäre der Platz für einen Zahlungslink oder Anweisungen.")
-    return PAYMENT
+    # Anweisungen zur Zahlung
+    if payment_method == "PayPal":
+        await update.message.reply_text("Bitte überweise den Betrag an **paypal@example.com**.")
+    elif payment_method == "Revolut":
+        await update.message.reply_text("Bitte überweise den Betrag an IBAN **DE123456789**.")
+    elif payment_method == "Amazon Gutschein":
+        await update.message.reply_text(
+            "Bitte sende den Gutschein-Code hier im Chat oder kontaktiere uns direkt."
+        )
+
+    return SUMMARY
 
 # Beenden des Gesprächs
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -141,9 +177,10 @@ if __name__ == "__main__":
         entry_points=[CommandHandler("start", start)],
         states={
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
-            UPLOAD_IMAGE: [MessageHandler(filters.PHOTO, upload_image)],
+            UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
-            PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel)]
+            SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
+            SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel)]
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
