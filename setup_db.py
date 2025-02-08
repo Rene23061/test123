@@ -19,16 +19,19 @@ def init_db():
         CREATE TABLE IF NOT EXISTS bookings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id TEXT NOT NULL,
+            name TEXT NOT NULL,
             option TEXT,
             description TEXT,
             photo_file_id TEXT,
+            payment_status TEXT DEFAULT 'offen',  -- Zahlung offen oder bezahlt
+            attendance_status TEXT DEFAULT 'offen',  -- Erscheinen offen, anwesend, nicht erschienen
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
     connection.commit()
     connection.close()
-    print("Datenbank und Tabellen wurden erfolgreich eingerichtet.")
+    print("Datenbank und Tabellen wurden erfolgreich erweitert.")
 
 if __name__ == "__main__":
     init_db()
