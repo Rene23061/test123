@@ -25,8 +25,10 @@ def get_current_date(chat_id: str):
         connection.close()
         
         if result:
+            logger.info(f"Datum erfolgreich aus der Datenbank abgerufen: {result[0]}")
             return result[0]
         else:
+            logger.info(f"Kein Datum für Chat {chat_id} gefunden.")
             return "Noch kein Datum gesetzt"
     except Exception as e:
         logger.error(f"Fehler beim Abrufen des Datums aus der Datenbank: {e}")
