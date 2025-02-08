@@ -1,8 +1,8 @@
 import logging
 import re
 import os
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, CallbackQueryHandler, filters
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters
 
 # Logging aktivieren
 logging.basicConfig(
@@ -53,11 +53,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if existing_booking_date:
         # Benutzer hat bereits eine Buchung, nach Bestätigung fragen
-        keyboard = [
-            [InlineKeyboardButton("Ja, neuen Termin buchen", callback_data="new_booking")],
-            [InlineKeyboardButton("Nein, abbrechen", callback_data="cancel")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = ReplyKeyboardMarkup([["Ja, neuen Termin buchen", "Nein, abbrechen"]], one_time_keyboard=True)
         await update.message.reply_text(
             escape_markdown_v2(
                 f"Du hast bereits einen Termin am **{existing_booking_date}** gebucht.\n"
@@ -73,15 +69,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return SELECT_OPTION
 
 async def confirm_rebooking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    user_choice = update.message.text
 
-    if query.data == "new_booking":
-        await query.edit_message_text("Okay, lass uns mit der neuen Buchung starten!")
+    if user_choice == "Ja, neuen Termin buchen":
+        await update.message.reply_text("Okay, lass uns mit der neuen Buchung starten!")
         return await proceed_to_booking(update, context)
-    elif query.data == "cancel":
-        await query.edit_message_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
+    elif user_choice == "Nein, abbrechen":
+        await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
         return ConversationHandler.END
+    else:
+        await update.message.reply_text("Bitte wähle entweder 'Ja, neuen Termin buchen' oder 'Nein, abbrechen'.")
+        return CONFIRM_REBOOKING
 
 async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
@@ -113,11 +111,7 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         selected_deposit = "25€"
 
-    keyboard = [
-        [InlineKeyboardButton("Zurück", callback_data="back"), InlineKeyboardButton("Weiter (verstanden)", callback_data="continue")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
+    reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter (verstanden)"]], one_time_keyboard=True)
     await update.message.reply_text(
         escape_markdown_v2(
             f"Aufgrund häufiger kurzfristiger Absagen ist eine Anzahlung in Höhe von **{selected_deposit}** erforderlich.\n"
@@ -129,13 +123,12 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CONFIRM_SELECTION
 
 async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    user_choice = update.message.text
 
-    if query.data == "back":
+    if user_choice == "Zurück":
         return await proceed_to_booking(update, context)
-    elif query.data == "continue":
-        await query.edit_message_text(
+    elif user_choice == "Weiter (verstanden)":
+        await update.message.reply_text(
             escape_markdown_v2(
                 "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
                 "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**."
@@ -143,6 +136,9 @@ async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="MarkdownV2"
         )
         return UPLOAD_IMAGE
+    else:
+        await update.message.reply_text("Bitte wähle entweder 'Zurück' oder 'Weiter (verstanden)'.")
+        return CONFIRM_SELECTION
 
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text and update.message.text.lower() == "nein":
@@ -215,9 +211,9 @@ if __name__ == "__main__":
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CONFIRM_REBOOKING: [CallbackQueryHandler(confirm_rebooking)],
+            CONFIRM_REBOOKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_rebooking)],
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
-            CONFIRM_SELECTION: [CallbackQueryHandler(confirm_selection)],
+            CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
             UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
