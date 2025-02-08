@@ -15,7 +15,7 @@ def escape_markdown_v2(text: str) -> str:
     return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 # Phasen der Unterhaltung
-SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, SUMMARY, CONFIRM_REBOOKING = range(7)
+SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, CONFIRM_REBOOKING = range(6)
 
 DATE_FILE = "event_date.txt"
 USER_BOOKINGS_FILE = "user_bookings.txt"
@@ -177,6 +177,7 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(summary, parse_mode="MarkdownV2")
 
+    # Admin informieren
     admin_id = get_admin_id()
     if admin_id:
         await context.bot.send_message(
@@ -217,10 +218,9 @@ if __name__ == "__main__":
             CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
             UPLOAD_IMAGE: [MessageHandler(filters.TEXT | filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
-            SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
-            SUMMARY: [MessageHandler(filters.ALL, fallback_message)]
+            SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)]
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[MessageHandler(filters.ALL, fallback_message), CommandHandler("cancel", cancel)]
     )
 
     app.add_handler(conv_handler)
