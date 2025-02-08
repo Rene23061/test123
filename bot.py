@@ -6,9 +6,9 @@ TOKEN = "7622465777:AAFmKGf99ARh22mmw4Ex2jAdU2MBCZIs7VY"
 
 # Themen mit Regeln (message_thread_id)
 THEMEN_REGELN = {
-    "lesen_nur": [2, 3, 913, 914],      # Nur Lesen erlaubt (löscht alle Nachrichten von Nicht-Admins)
+    "lesen_nur": [1049, 2, 3, 913, 914],      # Nur Lesen erlaubt (löscht alle Nachrichten von Nicht-Admins)
     "medien_only": [912],    # Nur Bilder/Videos erlaubt
-    "links_erlaubt": [911, 1049],  # Alle Links werden gelöscht, außer erlaubte
+    "links_erlaubt": [911],  # Alle Links werden gelöscht, außer erlaubte
 }
 
 # Liste mit erlaubten Links
