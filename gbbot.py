@@ -10,7 +10,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATABASE_FILE = "event_data.db"
+# Absoluter Pfad zur Datenbank im Root-Verzeichnis
+DATABASE_FILE = "/root/event_data.db"
 
 # Phasen der Unterhaltung
 SELECT_OPTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, PAYMENT = range(4)
