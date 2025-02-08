@@ -49,8 +49,22 @@ def has_existing_booking(user_id: int):
     return None
 
 def save_booking(user_id: int, date: str):
-    with open(USER_BOOKINGS_FILE, "a") as file:
-        file.write(f"{user_id}: {date}\n")
+    bookings = {}
+
+    # Lese vorhandene Buchungen aus der Datei
+    if os.path.exists(USER_BOOKINGS_FILE):
+        with open(USER_BOOKINGS_FILE, "r") as file:
+            for line in file:
+                stored_user_id, stored_date = line.strip().split(": ")
+                bookings[stored_user_id] = stored_date
+
+    # Aktualisiere oder füge die neue Buchung hinzu
+    bookings[str(user_id)] = date
+
+    # Schreibe alle aktualisierten Buchungen in die Datei zurück
+    with open(USER_BOOKINGS_FILE, "w") as file:
+        for user, booking_date in bookings.items():
+            file.write(f"{user}: {booking_date}\n")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -134,18 +148,18 @@ async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return UPLOAD_IMAGE
 
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "photos" not in context.user_data:
-        context.user_data["photos"] = []
-
-    if update.message.photo:
-        photo_file_id = update.message.photo[-1].file_id
-        context.user_data["photos"].append(photo_file_id)
-        await update.message.reply_text("Bild gespeichert! Du kannst noch weitere Bilder hochladen oder **nein** schreiben, um fortzufahren.")
-        return UPLOAD_IMAGE
-
     if update.message.text and update.message.text.lower() == "nein":
-        await update.message.reply_text("Bilder-Upload abgeschlossen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
         return ENTER_DESCRIPTION
+
+    # Verarbeite hochgeladene Bilder (mehrere in einem Upload möglich)
+    if update.message.photo:
+        context.user_data["photos"] = [photo.file_id for photo in update.message.photo]
+        await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        return ENTER_DESCRIPTION
+
+    await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
+    return UPLOAD_IMAGE
 
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
@@ -163,10 +177,13 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
     save_booking(update.effective_user.id, selected_date)
 
-    # Bilder senden
+    # Bilder senden (falls vorhanden)
     if "photos" in context.user_data:
         for photo_id in context.user_data["photos"]:
             await update.message.reply_photo(photo_id)
+
+    # Benutzername oder Vorname extrahieren
+    user_name = update.effective_user.username if update.effective_user.username else update.effective_user.first_name
 
     summary = escape_markdown_v2(
         f"Du möchtest am **{selected_date}** zur Zeit **{context.user_data['selected_option'].splitlines()[0]}** teilnehmen.\n\n"
@@ -182,10 +199,10 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if admin_id:
         await context.bot.send_message(
             chat_id=int(admin_id),
-            text=f"Buchung von User {update.effective_user.first_name}:\n\n{summary}",
+            text=f"Buchung von @{user_name}:\n\n{summary}",
             parse_mode="MarkdownV2"
         )
-        for photo_id in context.user_data["photos"]:
+        for photo_id in context.user_data.get("photos", []):
             await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
 
     await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
