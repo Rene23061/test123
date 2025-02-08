@@ -6,32 +6,35 @@ def init_db():
     connection = sqlite3.connect(DATABASE_FILE)
     cursor = connection.cursor()
     
-    # Tabelle für Veranstaltungsdatum (pro Chat)
+    # Tabelle für Event-Einstellungen pro Chat (z.B. Datum, Optionen)
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS event_dates (
+        CREATE TABLE IF NOT EXISTS event_settings (
             chat_id TEXT PRIMARY KEY,
-            event_date TEXT NOT NULL
+            event_date TEXT NOT NULL,
+            option_1 TEXT,
+            option_2 TEXT,
+            option_3 TEXT
         )
     ''')
     
-    # Tabelle für Buchungen
+    # Tabelle für Buchungen (pro Teilnehmer und Zeitfenster)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS bookings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            option TEXT,
+            name TEXT,
+            selected_option TEXT,
             description TEXT,
             photo_file_id TEXT,
-            payment_status TEXT DEFAULT 'offen',  -- Zahlung offen oder bezahlt
-            attendance_status TEXT DEFAULT 'offen',  -- Erscheinen offen, anwesend, nicht erschienen
+            payment_status TEXT DEFAULT 'offen',
+            attendance_status TEXT DEFAULT 'offen',
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
     connection.commit()
     connection.close()
-    print("Datenbank und Tabellen wurden erfolgreich erweitert.")
+    print("Datenbank und Tabellen wurden erfolgreich eingerichtet.")
 
 if __name__ == "__main__":
     init_db()
