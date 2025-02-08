@@ -141,8 +141,19 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
     selected_option = context.user_data["selected_option"].split('\n')[0]  # Nur die Zeitspanne extrahieren
     description = context.user_data["description"]
+    total_price = context.user_data["selected_option"].split('\n')[1]
+    deposit = context.user_data["selected_option"].split('\n')[2]
 
     summary = (
         f"Du möchtest am **{selected_date}** zu der Zeit **{selected_option}** zu meinem Event kommen.\n\n"
         f"Deine Beschreibung:\n{description}\n\n"
-        f"Z 
+        f"Zahlungsmethode: {payment_method}\n\n"
+        f"Gesamtpreis: {total_price}\n"
+        f"Anzahlung: {deposit}\n\n"
+        "Bitte leiste die Anzahlung innerhalb der nächsten 48 Stunden, um deine Teilnahme zu garantieren."
+    )
+
+    await update.message.reply_text(summary, parse_mode="Markdown")
+
+    # Anweisungen zur Zahlung
+    if payment_method 
