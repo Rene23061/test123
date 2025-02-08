@@ -152,15 +152,17 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
         return ENTER_DESCRIPTION
 
-    # Speichere nur die höchste Auflösung jedes hochgeladenen Bildes
+    # Falls mehrere Bilder hochgeladen wurden, verarbeite alle
     if update.message.photo:
         context.user_data.setdefault("photos", [])
-        highest_res_photo = update.message.photo[-1].file_id  # Wähle die höchste Auflösung des aktuellen Bildes
-        context.user_data["photos"].append(highest_res_photo)
+        for photo in update.message.photo:
+            context.user_data["photos"].append(photo.file_id)
 
-    # Gehe sofort zur nächsten Phase
-    await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-    return ENTER_DESCRIPTION
+        await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        return ENTER_DESCRIPTION
+
+    await update.message.reply_text("Bitte lade ein gültiges Bild hoch oder schreibe **nein**, um fortzufahren.")
+    return UPLOAD_IMAGE
 
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
