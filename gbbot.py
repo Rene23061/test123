@@ -191,6 +191,13 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
     return ConversationHandler.END
 
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Gespräch abgebrochen von Benutzer {update.effective_user.first_name}.")
+    await update.message.reply_text(
+        "Buchung abgebrochen. Du kannst jederzeit /start eingeben, um von vorne zu beginnen."
+    )
+    return ConversationHandler.END
+
 async def fallback_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Entschuldigung, ich habe das nicht verstanden. Bitte wähle eine der verfügbaren Optionen oder benutze /cancel, um den Prozess abzubrechen."
