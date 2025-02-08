@@ -177,7 +177,6 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(summary, parse_mode="MarkdownV2")
 
-    # Admin informieren
     admin_id = get_admin_id()
     if admin_id:
         await context.bot.send_message(
@@ -190,6 +189,11 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
     return ConversationHandler.END
+
+async def fallback_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Entschuldigung, ich habe das nicht verstanden. Bitte wähle eine der verfügbaren Optionen oder benutze /cancel, um den Prozess abzubrechen."
+    )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Deine ID ist: {update.effective_user.id}")
