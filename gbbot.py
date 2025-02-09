@@ -43,18 +43,18 @@ def has_existing_booking(user_id: int):
     if os.path.exists(BOOKINGS_WITH_PHOTOS_FILE):
         with open(BOOKINGS_WITH_PHOTOS_FILE, "r") as file:
             for line in file:
-                parts = line.strip().split(": ", maxsplit=2)
-                if len(parts) >= 3:
-                    stored_user_id, stored_date, _ = parts[:3]
+                parts = line.strip().split(": ", maxsplit=3)
+                if len(parts) >= 4:
+                    stored_user_id, stored_date, _, _ = parts[:4]
                     if str(user_id) == stored_user_id.strip():
                         return stored_date.strip()
     return None
 
-def save_booking_with_photos(user_id: int, date: str, photos: list, payment_method: str):
+def save_booking_with_photos(user_id: int, date: str, photos: list, payment_method: str, deposit: str):
     try:
         with open(BOOKINGS_WITH_PHOTOS_FILE, "a") as file:
             photo_ids = ",".join(photos)
-            file.write(f"{user_id}: {date}: {photo_ids}: {payment_method}\n")
+            file.write(f"{user_id}: {date}: {photo_ids}: {payment_method}: {deposit}\n")
         logger.info(f"Buchung mit Fotos und Zahlungsmethode für Benutzer {user_id} gespeichert.")
     except Exception as e:
         logger.error(f"Fehler beim Speichern der Buchung: {e}")
@@ -113,6 +113,7 @@ async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     option_lines = user_selection.split("\n")
     selected_deposit = "50€" if "150€" in option_lines[1] else "25€"
+    context.user_data["selected_deposit"] = selected_deposit
 
     reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter (verstanden)"]], one_time_keyboard=True)
     await update.message.reply_text(
@@ -210,7 +211,9 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = escape_markdown_v2(
         f"Du möchtest am **{selected_date}** zur Zeit **{context.user_data['selected_option'].splitlines()[0]}** teilnehmen.\n\n"
         f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
-        f"Zahlungsmethode: {context.user_data['payment_method']}\n\n"
+        f"Zahlungsmethode: {context.user_data['payment_method']}\n"
+        f"Gesamtkosten: {context.user_data['selected_option'].splitlines()[1]}\n"
+        f"Anzahlung: {context.user_data['selected_deposit']}\n\n"
         "Ohne Anzahlung innerhalb der nächsten 48 Stunden ist keine Teilnahme garantiert."
     )
 
@@ -220,7 +223,8 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id=update.effective_user.id,
         date=selected_date,
         photos=context.user_data["photos"],
-        payment_method=context.user_data["payment_method"]
+        payment_method=context.user_data["payment_method"],
+        deposit=context.user_data["selected_deposit"]
     )
 
     admin_id = get_admin_id()
