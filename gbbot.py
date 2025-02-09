@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes
 from telegram.ext.filters import TEXT
 
-# Dein Telegram-Bot-Testtoken
+# Dein Telegram-Bot-Testtoken (später mit finalem Token ersetzen)
 TOKEN = "7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y"
 
 # Verbindung zur Datenbank herstellen
@@ -20,7 +20,7 @@ def fetch_events():
     conn.close()
     return events
 
-# Start-Nachricht
+# Start-Nachricht senden
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.message.from_user
     await update.message.reply_text(f"Hallo {user.first_name}! Willkommen beim Buchungs-Bot.\n\nHier sind die aktuellen Events:")
@@ -33,7 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         await update.message.reply_text("Aktuell sind keine Events verfügbar.")
 
-# Event-Auswahl (noch ohne Speicherung)
+# Event-Auswahl verarbeiten
 async def handle_event_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message.text.strip()
     if not message.isdigit():
