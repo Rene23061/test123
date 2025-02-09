@@ -37,6 +37,10 @@ def get_current_date():
     except FileNotFoundError:
         return "Noch kein Datum gesetzt"
 
+def set_event_date(date: str):
+    with open(DATE_FILE, "w") as file:
+        file.write(date)
+
 def get_admin_id():
     if os.path.exists(ADMIN_ID_FILE):
         with open(ADMIN_ID_FILE, "r") as file:
@@ -182,12 +186,26 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
     return ConversationHandler.END
 
+async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        save_admin_id(context.args[0])
+        await update.message.reply_text(f"Admin-ID wurde erfolgreich auf {context.args[0]} gesetzt.")
+    else:
+        await update.message.reply_text("Bitte gebe die Admin-ID an: /setadmin <Admin-ID>")
+
+async def set_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        set_event_date(context.args[0])
+        await update.message.reply_text(f"Das Veranstaltungsdatum wurde auf **{context.args[0]}** gesetzt.")
+    else:
+        await update.message.reply_text("Bitte gib das Datum im Format 'YYYY-MM-DD' an: /setdate <Datum>")
+
 if __name__ == "__main__":
     persistence = PicklePersistence(filepath="bot_data.pkl")
     app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").persistence(persistence).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("start", start), CommandHandler("new", start)],
         states={
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
             CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
@@ -200,5 +218,6 @@ if __name__ == "__main__":
     )
 
     app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("setadmin", lambda u, c: save_admin_id(c.args[0]) or u.message.reply_text("Admin-ID gespeichert.")))
+    app.add_handler(CommandHandler("setadmin", set_admin))
+    app.add_handler(CommandHandler("setdate", set_event))
     app.run_polling()
