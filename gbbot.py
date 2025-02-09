@@ -18,7 +18,7 @@ def escape_markdown_v2(text: str) -> str:
 SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, CONFIRM_REBOOKING = range(6)
 
 DATE_FILE = "event_date.txt"
-USER_BOOKINGS_FILE = "user_bookings.txt"
+BOOKINGS_WITH_PHOTOS_FILE = "bookings_with_photos.txt"
 ADMIN_ID_FILE = "admin_id.txt"
 
 def get_current_date():
@@ -39,70 +39,27 @@ def save_admin_id(admin_id: str):
     with open(ADMIN_ID_FILE, "w") as file:
         file.write(admin_id)
 
-def has_existing_booking(user_id: int):
-    if os.path.exists(USER_BOOKINGS_FILE):
-        with open(USER_BOOKINGS_FILE, "r") as file:
-            for line in file:
-                stored_user_id, stored_date = line.strip().split(": ")
-                if str(user_id) == stored_user_id:
-                    return stored_date
-    return None
-
-def save_booking(user_id: int, date: str):
-    bookings = {}
-
-    # Lese vorhandene Buchungen aus der Datei
-    if os.path.exists(USER_BOOKINGS_FILE):
-        with open(USER_BOOKINGS_FILE, "r") as file:
-            for line in file:
-                stored_user_id, stored_date = line.strip().split(": ")
-                bookings[stored_user_id] = stored_date
-
-    # Aktualisiere oder füge die neue Buchung hinzu
-    bookings[str(user_id)] = date
-
-    # Schreibe alle aktualisierten Buchungen in die Datei zurück
-    with open(USER_BOOKINGS_FILE, "w") as file:
-        for user, booking_date in bookings.items():
-            file.write(f"{user}: {booking_date}\n")
+def save_booking_with_photos(user_id: int, date: str, photos: list):
+    try:
+        # Öffne oder erstelle die Datei und füge eine neue Zeile hinzu
+        with open(BOOKINGS_WITH_PHOTOS_FILE, "a") as file:
+            photo_ids = ",".join(photos)
+            file.write(f"{user_id}: {date}: {photo_ids}\n")
+        logger.info(f"Buchung mit Fotos für Benutzer {user_id} gespeichert.")
+    except Exception as e:
+        logger.error(f"Fehler beim Speichern der Buchung mit Fotos: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    existing_booking_date = has_existing_booking(user_id)
-
-    if existing_booking_date:
-        reply_markup = ReplyKeyboardMarkup([["Ja, neuen Termin buchen", "Nein, abbrechen"]], one_time_keyboard=True)
-        await update.message.reply_text(
-            escape_markdown_v2(
-                f"Du hast bereits einen Termin am **{existing_booking_date}** gebucht.\n"
-                "Möchtest du einen weiteren Termin buchen?"
-            ),
-            reply_markup=reply_markup,
-            parse_mode="MarkdownV2"
-        )
-        return CONFIRM_REBOOKING
-
-    await proceed_to_booking(update, context)
-    return SELECT_OPTION
-
-async def confirm_rebooking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_choice = update.message.text
-
-    if user_choice == "Ja, neuen Termin buchen":
-        await update.message.reply_text("Okay, lass uns mit der neuen Buchung starten!")
-        return await proceed_to_booking(update, context)
-    elif user_choice == "Nein, abbrechen":
-        await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
-        return ConversationHandler.END
-
-async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
+
     options = [
         ["13:00 - 17:00 Uhr\n100€"], 
         ["17:00 - 20:00 Uhr\n100€"], 
         ["13:00 - 20:00 Uhr\n150€"]
     ]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
+
     await update.message.reply_text(
         escape_markdown_v2(
             f"Willkommen zur Veranstaltungsbuchung!\n"
@@ -136,7 +93,7 @@ async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_choice = update.message.text
 
     if user_choice == "Zurück":
-        return await proceed_to_booking(update, context)
+        return await start(update, context)
     elif user_choice == "Weiter (verstanden)":
         await update.message.reply_text(
             escape_markdown_v2(
@@ -148,18 +105,21 @@ async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return UPLOAD_IMAGE
 
 async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text and update.message.text.lower() == "nein":
-        await update.message.reply_text("Kein Bild hochgeladen. Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-        return ENTER_DESCRIPTION
-
-    # Speichere die höchste Auflösung des letzten Bildes
-    if update.message.photo:
+    try:
         context.user_data.setdefault("photos", [])
-        highest_res_photo = update.message.photo[-1].file_id  # Wähle die höchste Auflösung des aktuellen Bildes
-        context.user_data["photos"].append(highest_res_photo)
 
-    await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-    return ENTER_DESCRIPTION
+        # Gehe jedes hochgeladene Bild durch und speichere die höchste Auflösung
+        for photo in update.message.photo:
+            highest_res_photo = photo.file_id
+            context.user_data["photos"].append(highest_res_photo)
+
+        logger.info(f"Bild(er) erfolgreich hochgeladen. Anzahl gespeicherter Bilder: {len(context.user_data['photos'])}")
+
+        await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
+        return ENTER_DESCRIPTION
+    except Exception as e:
+        logger.error(f"Fehler beim Verarbeiten des Bild-Uploads: {e}")
+        await update.message.reply_text("Es gab ein Problem beim Hochladen der Bilder. Bitte versuche es erneut.")
 
 async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     description = update.message.text
@@ -175,14 +135,20 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["payment_method"] = payment_method
 
     selected_date = get_current_date()
-    save_booking(update.effective_user.id, selected_date)
 
-    # Sende alle gespeicherten Bilder (höchste Auflösung jedes Bildes)
+    # Speichere die Buchung zusammen mit den Bild-IDs
+    save_booking_with_photos(
+        user_id=update.effective_user.id,
+        date=selected_date,
+        photos=context.user_data["photos"]
+    )
+
+    # Bilder an Benutzer senden
     if "photos" in context.user_data:
         for photo_id in context.user_data["photos"]:
             await update.message.reply_photo(photo_id)
 
-    # Benutzername oder Vorname extrahieren
+    # Benutzername extrahieren
     user_name = update.effective_user.username if update.effective_user.username else update.effective_user.first_name
 
     summary = escape_markdown_v2(
@@ -202,10 +168,9 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"Buchung von @{user_name}:\n\n{summary}",
             parse_mode="MarkdownV2"
         )
-        # Sende die Bilder an den Admin
-        if "photos" in context.user_data:
-            for photo_id in context.user_data["photos"]:
-                await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
+        # Bilder an Admin senden
+        for photo_id in context.user_data["photos"]:
+            await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
 
     await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
     return ConversationHandler.END
@@ -216,11 +181,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Buchung abgebrochen. Du kannst jederzeit /start eingeben, um von vorne zu beginnen."
     )
     return ConversationHandler.END
-
-async def fallback_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Entschuldigung, ich habe das nicht verstanden. Bitte wähle eine der verfügbaren Optionen oder benutze /cancel, um den Prozess abzubrechen."
-    )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Deine ID ist: {update.effective_user.id}")
@@ -239,14 +199,13 @@ if __name__ == "__main__":
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CONFIRM_REBOOKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_rebooking)],
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
             CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
             UPLOAD_IMAGE: [MessageHandler(filters.PHOTO, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)]
         },
-        fallbacks=[MessageHandler(filters.ALL, fallback_message), CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", cancel)]
     )
 
     app.add_handler(conv_handler)
