@@ -1,6 +1,5 @@
-import sqlite3
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes
+from telegram.ext.filters import TEXT
 
 # Dein Telegram-Bot-Testtoken (später das finale Token ersetzen!)
 TOKEN = "7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y"
