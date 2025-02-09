@@ -15,7 +15,7 @@ def escape_markdown_v2(text: str) -> str:
     return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 # Phasen der Unterhaltung
-SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, FINALIZE_BOOKING = range(6)
+SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, CONFIRM_REBOOKING, FINALIZE_BOOKING = range(7)
 
 DATE_FILE = "event_date.txt"
 BOOKINGS_WITH_PHOTOS_FILE = "bookings_with_photos.txt"
@@ -73,7 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
             parse_mode="MarkdownV2"
         )
-        return FINALIZE_BOOKING
+        return CONFIRM_REBOOKING
 
     await proceed_to_booking(update, context)
     return SELECT_OPTION
@@ -233,44 +233,3 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
     return ConversationHandler.END
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Gespräch abgebrochen von Benutzer {update.effective_user.first_name}.")
-    await update.message.reply_text(
-        "Buchung abgebrochen. Du kannst jederzeit /start eingeben, um von vorne zu beginnen."
-    )
-    return ConversationHandler.END
-
-async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Deine ID ist: {update.effective_user.id}")
-
-async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 1:
-        await update.message.reply_text("Bitte gib die Admin-ID an: /setadmin <Admin-ID>")
-        return
-
-    save_admin_id(context.args[0])
-    await update.message.reply_text(f"Admin-ID wurde erfolgreich auf {context.args[0]} gesetzt.")
-
-if __name__ == "__main__":
-    app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            CONFIRM_REBOOKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_rebooking)],
-            SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
-            CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
-            UPLOAD_IMAGE: [MessageHandler(filters.PHOTO | filters.TEXT, upload_image)],
-            ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
-            SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("id", get_id))
-    app.add_handler(CommandHandler("setadmin", set_admin))
-
-    logger.info("Bot wird gestartet...")
-    app.run_polling()
