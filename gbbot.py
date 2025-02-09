@@ -269,7 +269,7 @@ async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == "__main__":
     persistence = PicklePersistence(filepath="bot_data.pkl")
-    app = ApplicationBuilder().token("DEIN_BOT_TOKEN").persistence(persistence).build()
+    app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").persistence(persistence).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
