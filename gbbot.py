@@ -39,9 +39,17 @@ def save_admin_id(admin_id: str):
     with open(ADMIN_ID_FILE, "w") as file:
         file.write(admin_id)
 
+def has_existing_booking(user_id: int):
+    if os.path.exists(BOOKINGS_WITH_PHOTOS_FILE):
+        with open(BOOKINGS_WITH_PHOTOS_FILE, "r") as file:
+            for line in file:
+                stored_user_id, stored_date, _ = line.strip().partition(":")[::2]
+                if str(user_id) == stored_user_id:
+                    return stored_date.strip()
+    return None
+
 def save_booking_with_photos(user_id: int, date: str, photos: list):
     try:
-        # Öffne oder erstelle die Datei und füge eine neue Zeile hinzu
         with open(BOOKINGS_WITH_PHOTOS_FILE, "a") as file:
             photo_ids = ",".join(photos)
             file.write(f"{user_id}: {date}: {photo_ids}\n")
@@ -51,15 +59,41 @@ def save_booking_with_photos(user_id: int, date: str, photos: list):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    current_date = get_current_date()
+    existing_booking_date = has_existing_booking(user_id)
 
+    if existing_booking_date:
+        reply_markup = ReplyKeyboardMarkup([["Ja, neuen Termin buchen", "Nein, abbrechen"]], one_time_keyboard=True)
+        await update.message.reply_text(
+            escape_markdown_v2(
+                f"Du hast bereits einen Termin am **{existing_booking_date}** gebucht.\n"
+                "Möchtest du einen weiteren Termin buchen?"
+            ),
+            reply_markup=reply_markup,
+            parse_mode="MarkdownV2"
+        )
+        return CONFIRM_REBOOKING
+
+    await proceed_to_booking(update, context)
+    return SELECT_OPTION
+
+async def confirm_rebooking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_choice = update.message.text
+
+    if user_choice == "Ja, neuen Termin buchen":
+        await update.message.reply_text("Okay, lass uns mit der neuen Buchung starten!")
+        return await proceed_to_booking(update, context)
+    elif user_choice == "Nein, abbrechen":
+        await update.message.reply_text("Buchung abgebrochen. Du kannst jederzeit /start eingeben.")
+        return ConversationHandler.END
+
+async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current_date = get_current_date()
     options = [
         ["13:00 - 17:00 Uhr\n100€"], 
         ["17:00 - 20:00 Uhr\n100€"], 
         ["13:00 - 20:00 Uhr\n150€"]
     ]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
-
     await update.message.reply_text(
         escape_markdown_v2(
             f"Willkommen zur Veranstaltungsbuchung!\n"
@@ -108,15 +142,13 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         context.user_data.setdefault("photos", [])
 
-        # Gehe jedes hochgeladene Bild durch und speichere die höchste Auflösung
-        for photo in update.message.photo:
-            highest_res_photo = photo.file_id
-            context.user_data["photos"].append(highest_res_photo)
+        # Speichere nur die höchste Auflösung jedes Bildes
+        highest_res_photo = update.message.photo[-1].file_id
+        context.user_data["photos"].append(highest_res_photo)
 
-        logger.info(f"Bild(er) erfolgreich hochgeladen. Anzahl gespeicherter Bilder: {len(context.user_data['photos'])}")
+        logger.info(f"Höchste Auflösung des Bildes erfolgreich gespeichert. Aktuell gespeicherte Bilder: {len(context.user_data['photos'])}")
 
-        await update.message.reply_text("Bild(er) gespeichert! Bitte beschreibe dich und deine Wünsche oder Vorlieben.")
-        return ENTER_DESCRIPTION
+        await update.message.reply_text("Bild gespeichert! Du kannst weitere Bilder hochladen oder **nein** schreiben, um fortzufahren.")
     except Exception as e:
         logger.error(f"Fehler beim Verarbeiten des Bild-Uploads: {e}")
         await update.message.reply_text("Es gab ein Problem beim Hochladen der Bilder. Bitte versuche es erneut.")
@@ -199,6 +231,7 @@ if __name__ == "__main__":
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            CONFIRM_REBOOKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_rebooking)],
             SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
             CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
             UPLOAD_IMAGE: [MessageHandler(filters.PHOTO, upload_image)],
