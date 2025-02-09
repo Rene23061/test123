@@ -1,8 +1,17 @@
 import logging
 import re
 import os
+import time
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    ConversationHandler,
+    PicklePersistence,
+    filters,
+)
 
 # Logging aktivieren
 logging.basicConfig(
@@ -259,7 +268,8 @@ async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Admin-ID wurde erfolgreich auf {context.args[0]} gesetzt.")
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
+    persistence = PicklePersistence(filepath="bot_data.pkl")
+    app = ApplicationBuilder().token("DEIN_BOT_TOKEN").persistence(persistence).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -272,12 +282,17 @@ if __name__ == "__main__":
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
             HANDLE_PAYMENT_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_details)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.ALL, cancel)],
     )
 
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("id", get_id))
     app.add_handler(CommandHandler("setadmin", set_admin))
 
-    logger.info("Bot wird gestartet...")
-    app.run_polling()
+    while True:
+        try:
+            logger.info("Bot wird gestartet...")
+            app.run_polling()
+        except Exception as e:
+            logger.error(f"Bot abgestürzt: {e}. Neustart in 5 Sekunden...")
+            time.sleep(5)
