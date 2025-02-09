@@ -160,3 +160,117 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Fehler beim Verarbeiten des Bild-Uploads: {e}")
         await update.message.reply_text("Es gab ein Problem beim Hochladen der Bilder. Bitte versuche es erneut.")
+
+async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    description = update.message.text
+    context.user_data["description"] = description
+
+    payment_options = [["Revolut", "PayPal"], ["Amazon Gutschein"]]
+    reply_markup = ReplyKeyboardMarkup(payment_options, one_time_keyboard=True)
+    await update.message.reply_text("Bitte wähle eine Zahlungsmethode aus:", reply_markup=reply_markup)
+    return SELECT_PAYMENT
+
+async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    payment_method = update.message.text
+    context.user_data["payment_method"] = payment_method
+
+    # Auswahl der Zahlungsmethode und entsprechende Hinweise
+    if payment_method.lower() == "paypal":
+        await update.message.reply_text(
+            "Bitte überweise den Betrag an folgende PayPal-Adresse:\n**paypal@example.com**"
+        )
+    elif payment_method.lower() == "revolut":
+        await update.message.reply_text(
+            "Bitte überweise den Betrag an die folgende IBAN:\n**DE123456789**"
+        )
+    elif payment_method.lower() == "amazon gutschein":
+        await update.message.reply_text(
+            "Bitte sende den Gutscheincode hier im Chat oder schreibe **nein**, um ohne Code fortzufahren."
+        )
+
+    # Weiter zur Zusammenfassung
+    return await finalize_booking(update, context)
+
+async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    selected_date = get_current_date()
+
+    # Bilder an Benutzer senden (falls vorhanden)
+    if context.user_data.get("photos"):
+        for photo_id in context.user_data["photos"]:
+            await update.message.reply_photo(photo_id)
+
+    # Benutzername extrahieren
+    user_name = update.effective_user.username if update.effective_user.username else update.effective_user.first_name
+
+    # Buchung zusammenfassen
+    summary = escape_markdown_v2(
+        f"Du möchtest am **{selected_date}** zur Zeit **{context.user_data['selected_option'].splitlines()[0]}** teilnehmen.\n\n"
+        f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
+        f"Zahlungsmethode: {context.user_data['payment_method']}\n\n"
+        "Ohne Anzahlung innerhalb der nächsten 48 Stunden ist keine Teilnahme garantiert."
+    )
+
+    await update.message.reply_text(summary, parse_mode="MarkdownV2")
+
+    # Buchungsdetails speichern
+    save_booking_with_photos(
+        user_id=update.effective_user.id,
+        date=selected_date,
+        photos=context.user_data["photos"],
+        payment_method=context.user_data["payment_method"]
+    )
+
+    # Admin benachrichtigen (falls Admin-ID gesetzt ist)
+    admin_id = get_admin_id()
+    if admin_id:
+        await context.bot.send_message(
+            chat_id=int(admin_id),
+            text=f"Buchung von @{user_name}:\n\n{summary}",
+            parse_mode="MarkdownV2"
+        )
+        for photo_id in context.user_data.get("photos", []):
+            await context.bot.send_photo(chat_id=int(admin_id), photo=photo_id)
+
+    await update.message.reply_text("Deine Buchung wurde erfolgreich gespeichert. Vielen Dank!")
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Gespräch abgebrochen von Benutzer {update.effective_user.first_name}.")
+    await update.message.reply_text(
+        "Buchung abgebrochen. Du kannst jederzeit /start eingeben, um von vorne zu beginnen."
+    )
+    return ConversationHandler.END
+
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Deine ID ist: {update.effective_user.id}")
+
+async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) != 1:
+        await update.message.reply_text("Bitte gib die Admin-ID an: /setadmin <Admin-ID>")
+        return
+
+    save_admin_id(context.args[0])
+    await update.message.reply_text(f"Admin-ID wurde erfolgreich auf {context.args[0]} gesetzt.")
+
+if __name__ == "__main__":
+    app = ApplicationBuilder().token("7770444877:AAEYnWtxNtGKBXGlIQ77yAVjhl_C0d3uK9Y").build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            CONFIRM_REBOOKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_rebooking)],
+            SELECT_OPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_option)],
+            CONFIRM_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_selection)],
+            UPLOAD_IMAGE: [MessageHandler(filters.PHOTO | filters.TEXT, upload_image)],
+            ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
+            SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+
+    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("id", get_id))
+    app.add_handler(CommandHandler("setadmin", set_admin))
+
+    logger.info("Bot wird gestartet...")
+    app.run_polling()
