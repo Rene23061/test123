@@ -43,15 +43,11 @@ def has_existing_booking(user_id: int):
     if os.path.exists(BOOKINGS_WITH_PHOTOS_FILE):
         with open(BOOKINGS_WITH_PHOTOS_FILE, "r") as file:
             for line in file:
-                try:
-                    # Zeile in maximal 3 Teile splitten
-                    parts = line.strip().split(": ", maxsplit=2)
-                    if len(parts) == 3:
-                        stored_user_id, stored_date, _ = parts
-                        if str(user_id) == stored_user_id.strip():
-                            return stored_date.strip()
-                except Exception as e:
-                    logger.warning(f"Fehler beim Verarbeiten der Zeile: {line.strip()} - {e}")
+                parts = line.strip().split(": ", maxsplit=2)
+                if len(parts) == 3:
+                    stored_user_id, stored_date, _ = parts
+                    if str(user_id) == stored_user_id.strip():
+                        return stored_date.strip()
     return None
 
 def save_booking_with_photos(user_id: int, date: str, photos: list):
@@ -137,8 +133,7 @@ async def confirm_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif user_choice == "Weiter (verstanden)":
         await update.message.reply_text(
             escape_markdown_v2(
-                "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist.\n"
-                "Falls du kein Bild hochladen möchtest, schreibe bitte einfach **nein**."
+                "Du kannst jetzt ein Bild hochladen, das für die Buchung relevant ist."
             ),
             parse_mode="MarkdownV2"
         )
@@ -154,7 +149,10 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"Höchste Auflösung des Bildes erfolgreich gespeichert. Aktuell gespeicherte Bilder: {len(context.user_data['photos'])}")
 
-        await update.message.reply_text("Bild gespeichert! Du kannst weitere Bilder hochladen oder **nein** schreiben, um fortzufahren.")
+        # Informiere den Nutzer und leite direkt zur Beschreibung weiter
+        await update.message.reply_text("Bild gespeichert! Bitte gib jetzt eine kurze Beschreibung ein.")
+        return ENTER_DESCRIPTION
+
     except Exception as e:
         logger.error(f"Fehler beim Verarbeiten des Bild-Uploads: {e}")
         await update.message.reply_text("Es gab ein Problem beim Hochladen der Bilder. Bitte versuche es erneut.")
