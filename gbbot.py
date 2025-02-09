@@ -1,7 +1,6 @@
 import logging
 import re
 import os
-import time
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -25,7 +24,7 @@ def escape_markdown_v2(text: str) -> str:
     return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 # Phasen der Unterhaltung
-SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, HANDLE_PAYMENT_DETAILS, FINALIZE_BOOKING = range(7)
+SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, FINALIZE_BOOKING = range(6)
 
 DATE_FILE = "event_date.txt"
 BOOKINGS_WITH_PHOTOS_FILE = "bookings_with_photos.txt"
@@ -34,8 +33,7 @@ ADMIN_ID_FILE = "admin_id.txt"
 def get_current_date():
     try:
         with open(DATE_FILE, "r") as file:
-            date = file.read().strip()
-            return date if date else "Noch kein Datum gesetzt"
+            return file.read().strip() or "Noch kein Datum gesetzt"
     except FileNotFoundError:
         return "Noch kein Datum gesetzt"
 
@@ -66,7 +64,7 @@ def save_booking_with_photos(user_id: int, date: str, photos: list, payment_meth
             photo_ids = ",".join(photos)
             booking_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             file.write(f"{user_id}: {date}: {booking_time}: {photo_ids}: {payment_method}: {deposit}\n")
-        logger.info(f"Buchung mit Fotos und Zahlungsmethode für Benutzer {user_id} gespeichert.")
+        logger.info(f"Buchung für Benutzer {user_id} gespeichert.")
     except Exception as e:
         logger.error(f"Fehler beim Speichern der Buchung: {e}")
 
@@ -89,16 +87,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = get_current_date()
-    options = [
-        ["13:00 - 17:00 Uhr\n100€"], 
-        ["17:00 - 20:00 Uhr\n100€"], 
-        ["13:00 - 20:00 Uhr\n150€"]
-    ]
+    options = [["13:00 - 17:00 Uhr\n100€"], ["17:00 - 20:00 Uhr\n100€"], ["13:00 - 20:00 Uhr\n150€"]]
     reply_markup = ReplyKeyboardMarkup(options, one_time_keyboard=True)
     await update.message.reply_text(
         escape_markdown_v2(
-            f"Willkommen zur Veranstaltungsbuchung!\n"
-            f"Du möchtest an der Veranstaltung am **{current_date}** teilnehmen.\n"
+            f"Willkommen zur Veranstaltungsbuchung!\nDu möchtest an der Veranstaltung am **{current_date}** teilnehmen.\n"
             "Bitte wähle einen Zeitraum aus:"
         ),
         reply_markup=reply_markup,
@@ -109,12 +102,11 @@ async def proceed_to_booking(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def select_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_selection = update.message.text
     context.user_data["selected_option"] = user_selection
-
     option_lines = user_selection.split("\n")
     selected_deposit = "50€" if "150€" in option_lines[1] else "25€"
     context.user_data["selected_deposit"] = selected_deposit
 
-    reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter (verstanden)"]], one_time_keyboard=True)
+    reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter"]], one_time_keyboard=True)
     await update.message.reply_text(
         escape_markdown_v2(
             f"Aufgrund häufiger kurzfristiger Absagen ist eine Anzahlung in Höhe von **{selected_deposit}** erforderlich.\n"
@@ -158,7 +150,8 @@ async def enter_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["payment_method"] = update.message.text
-    await update.message.reply_text("Drücke auf **Weiter**, um zur Zusammenfassung zu gelangen.", reply_markup=ReplyKeyboardMarkup([["Weiter"]], one_time_keyboard=True))
+    reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter"]], one_time_keyboard=True)
+    await update.message.reply_text("Drücke auf **Weiter**, um zur Zusammenfassung zu gelangen.", reply_markup=reply_markup)
     return FINALIZE_BOOKING
 
 async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -175,6 +168,9 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(summary, parse_mode="MarkdownV2")
+    for photo_id in photos:
+        await update.message.reply_photo(photo_id)
+
     save_booking_with_photos(update.effective_user.id, selected_date, photos, context.user_data['payment_method'], context.user_data['selected_deposit'])
 
     admin_id = get_admin_id()
