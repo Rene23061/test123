@@ -43,9 +43,12 @@ def has_existing_booking(user_id: int):
     if os.path.exists(BOOKINGS_WITH_PHOTOS_FILE):
         with open(BOOKINGS_WITH_PHOTOS_FILE, "r") as file:
             for line in file:
-                stored_user_id, stored_date, _ = line.strip().partition(":")[::2]
-                if str(user_id) == stored_user_id:
-                    return stored_date.strip()
+                try:
+                    stored_user_id, stored_date, _ = line.strip().split(": ", 2)
+                    if str(user_id) == stored_user_id.strip():
+                        return stored_date.strip()
+                except ValueError:
+                    logger.warning(f"Fehlerhafte Zeile in der Buchungsdatei: {line.strip()}")
     return None
 
 def save_booking_with_photos(user_id: int, date: str, photos: list):
