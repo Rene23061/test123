@@ -15,7 +15,7 @@ def escape_markdown_v2(text: str) -> str:
     return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 # Phasen der Unterhaltung
-SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, CONFIRM_REBOOKING, FINALIZE_BOOKING = range(7)
+SELECT_OPTION, CONFIRM_SELECTION, UPLOAD_IMAGE, ENTER_DESCRIPTION, SELECT_PAYMENT, HANDLE_PAYMENT_DETAILS, CONFIRM_REBOOKING, FINALIZE_BOOKING = range(8)
 
 DATE_FILE = "event_date.txt"
 BOOKINGS_WITH_PHOTOS_FILE = "bookings_with_photos.txt"
@@ -148,7 +148,6 @@ async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         context.user_data.setdefault("photos", [])
 
-        # Speichere nur die höchste Auflösung jedes Bildes
         if update.message.photo:
             highest_res_photo = update.message.photo[-1].file_id
             context.user_data["photos"].append(highest_res_photo)
@@ -174,7 +173,6 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payment_method = update.message.text
     context.user_data["payment_method"] = payment_method
 
-    # Auswahl der Zahlungsmethode und entsprechende Hinweise
     if payment_method.lower() == "paypal":
         await update.message.reply_text(
             "Bitte überweise den Betrag an folgende PayPal-Adresse:\n**paypal@example.com**"
@@ -188,21 +186,27 @@ async def select_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Bitte sende den Gutscheincode hier im Chat oder schreibe **nein**, um ohne Code fortzufahren."
         )
 
-    # Weiter zur Zusammenfassung
+    reply_markup = ReplyKeyboardMarkup([["Zurück", "Weiter"]], one_time_keyboard=True)
+    await update.message.reply_text("Drücke auf **Weiter**, um zur Zusammenfassung zu gelangen.", reply_markup=reply_markup)
+    return HANDLE_PAYMENT_DETAILS
+
+async def handle_payment_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_choice = update.message.text
+
+    if user_choice == "Zurück":
+        return await select_payment(update, context)
+
     return await finalize_booking(update, context)
 
 async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = get_current_date()
 
-    # Bilder an Benutzer senden (falls vorhanden)
     if context.user_data.get("photos"):
         for photo_id in context.user_data["photos"]:
             await update.message.reply_photo(photo_id)
 
-    # Benutzername extrahieren
     user_name = update.effective_user.username if update.effective_user.username else update.effective_user.first_name
 
-    # Buchung zusammenfassen
     summary = escape_markdown_v2(
         f"Du möchtest am **{selected_date}** zur Zeit **{context.user_data['selected_option'].splitlines()[0]}** teilnehmen.\n\n"
         f"Deine Beschreibung:\n{context.user_data['description']}\n\n"
@@ -212,7 +216,6 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(summary, parse_mode="MarkdownV2")
 
-    # Buchungsdetails speichern
     save_booking_with_photos(
         user_id=update.effective_user.id,
         date=selected_date,
@@ -220,7 +223,6 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payment_method=context.user_data["payment_method"]
     )
 
-    # Admin benachrichtigen (falls Admin-ID gesetzt ist)
     admin_id = get_admin_id()
     if admin_id:
         await context.bot.send_message(
@@ -264,6 +266,7 @@ if __name__ == "__main__":
             UPLOAD_IMAGE: [MessageHandler(filters.PHOTO | filters.TEXT, upload_image)],
             ENTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_description)],
             SELECT_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_payment)],
+            HANDLE_PAYMENT_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_details)],
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
