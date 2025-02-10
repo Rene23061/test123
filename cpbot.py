@@ -101,18 +101,30 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         link = match.group(0)
         print(f"🔗 Erkannter Telegram-Link: {link}")
 
-        # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
-        if not is_whitelisted(link, cursor):
-            print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🚫 Hallo {user_display_name}, dein Link wurde automatisch gelöscht. "
-                     f"Bitte kontaktiere einen Admin, wenn du Fragen hast.",
-                reply_to_message_id=message.message_id
-            )
-            await context.bot.delete_message(chat_id, message.message_id)
-            return  # Nach der ersten gefundenen und gelöschten Nachricht abbrechen
-
+   # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
+    if not is_whitelisted(link, cursor):
+    print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
+    
+    # Klickbarer Name formatieren
+    if user.username:
+        user_display_name = f"[@{user.username}](tg://user?id={user.id})"  # Benutzernamen verlinken
+    else:
+        user_display_name = f"[{user.full_name}](tg://user?id={user.id})"  # Vollständigen Namen verlinken
+    
+    # Nachricht senden
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"🚫 Hallo {user_display_name}, dein Link wurde automatisch gelöscht. "
+             f"Bitte kontaktiere einen Admin, wenn du Fragen hast.",
+        reply_to_message_id=message.message_id,
+        parse_mode="Markdown"
+    )
+    
+    # Nachricht löschen
+    await context.bot.delete_message(chat_id, message.message_id)
+    return  # Nach der ersten gefundenen und gelöschten Nachricht abbrechen
+    
+    
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     global conn, cursor
