@@ -5,8 +5,9 @@ from telegram.ext import Application, MessageHandler, filters
 # --- Logging konfigurieren ---
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG
 )
+logging.getLogger("telegram").setLevel(logging.DEBUG)
 
 logging.info("Bot wird gestartet...")
 
@@ -33,14 +34,19 @@ async def main():
     await application.start()
     logging.info("Bot läuft... Drücke STRG+C zum Beenden.")
 
-    # Warten auf STRG+C
+    # Warten auf STRG+C, ohne Fehler beim Abbrechen
     try:
-        await asyncio.Future()  # Unendliches Warten
+        await asyncio.Event().wait()  # Wartet unbegrenzt, bis STRG+C gedrückt wird
     except (KeyboardInterrupt, SystemExit):
         logging.info("Beende den Bot...")
     finally:
+        # Stoppt den Bot sauber
         await application.stop()
         await application.shutdown()
+        logging.info("Bot wurde erfolgreich beendet.")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Bot durch Benutzer gestoppt.")
