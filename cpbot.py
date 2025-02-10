@@ -7,7 +7,7 @@ from telegram.ext import Application, MessageHandler, ContextTypes, filters
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
-TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/\S+")
+TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_-]+")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -40,12 +40,8 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     print(f"📩 Nachricht empfangen von @{user}: {text}")
 
     # Nach Telegram-Gruppenlinks suchen
-    links = TELEGRAM_LINK_PATTERN.findall(text)
-
-    # Wenn Links gefunden wurden, jeden prüfen
-    for link_tuple in links:
-        # Den kompletten Link rekonstruieren (Protokoll hinzufügen, falls nicht vorhanden)
-        link = link_tuple[0] + "t.me" + link_tuple[2]
+    for match in TELEGRAM_LINK_PATTERN.finditer(text):
+        link = match.group(0)  # Der vollständige erkannte Link
         print(f"🔗 Erkannter Link: {link}")
 
         # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
