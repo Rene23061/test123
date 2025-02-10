@@ -7,7 +7,7 @@ from telegram.ext import Application, MessageHandler, ContextTypes, filters
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
-TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_-]+")
+TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -42,7 +42,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     # Nach Telegram-Gruppenlinks suchen
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)  # Der vollständige erkannte Link
-        print(f"🔗 Erkannter Link: {link}")
+        print(f"🔗 Erkannter Telegram-Link: {link}")
 
         # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
         if not is_whitelisted(link, cursor):
@@ -66,7 +66,7 @@ def main():
     # Nachrichten-Handler hinzufügen
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
-    print("🤖 Bot wird gestartet und überwacht alle Telegram-Links...")
+    print("🤖 Bot wird gestartet und überwacht Telegram-Gruppenlinks...")
     application.run_polling()
 
 if __name__ == "__main__":
