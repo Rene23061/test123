@@ -13,7 +13,6 @@ TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|
 def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
-    # Tabelle erstellen, falls sie nicht existiert
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS whitelist (
             link TEXT PRIMARY KEY
@@ -47,23 +46,21 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
         if not is_whitelisted(link, cursor):
             print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
-            await context.bot.delete_message(chat_id, message.message_id)
+            # Antwort senden (ohne Reply)
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"❌ Der Link {link} ist nicht erlaubt und wurde entfernt.",
-                reply_to_message_id=message.message_id
+                text=f"❌ Der Link {link} ist nicht erlaubt und wurde entfernt."
             )
+            # Nachricht löschen
+            await context.bot.delete_message(chat_id, message.message_id)
             return  # Nach der ersten gefundenen und gelöschten Nachricht abbrechen
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
-    # Datenbankverbindung initialisieren
     global conn, cursor
     conn, cursor = init_db()
 
     application = Application.builder().token(TOKEN).build()
-
-    # Nachrichten-Handler hinzufügen
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
     print("🤖 Bot wird gestartet und überwacht Telegram-Gruppenlinks...")
