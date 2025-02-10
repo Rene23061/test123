@@ -6,12 +6,9 @@ import asyncio
 
 # --- Logging konfigurieren ---
 logging.basicConfig(
-    filename="bot_debug.log",
-    filemode='a',
     format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG
+    level=logging.INFO
 )
-
 logging.info("Bot wird gestartet...")
 
 # --- Initialisiere die Datenbank ---
@@ -43,40 +40,25 @@ def add_to_whitelist(link):
 def is_whitelisted(link):
     cursor.execute('SELECT link FROM whitelist WHERE link = ?', (link,))
     result = cursor.fetchone()
-    if result:
-        logging.info(f"Link ist in der Whitelist: {link}")
-    else:
-        logging.info(f"Link ist NICHT in der Whitelist: {link}")
     return result is not None
 
-# --- Überprüfung der Nachrichten in der Gruppe ---
+# --- Überprüfung der Telegram-Nachrichten ---
 async def check_telegram_links(update, context):
     message = update.message.text
-    username = update.message.from_user.username
-    chat_id = update.message.chat_id
-
-    logging.info(f"Prüfe Nachricht von @{username} in Chat {chat_id}: {message}")
-    
-    # Alle Telegram-Gruppen-Links filtern
     links = re.findall(r"(https?:\/\/)?t\.me\/[a-zA-Z0-9_-]+", message)
 
     for link in links:
         if not is_whitelisted(link):
-            logging.warning(f"Unerlaubter Link erkannt und gelöscht: {link}")
             await update.message.delete()
             await update.message.reply_text(
                 f"Dieser Link ist nicht erlaubt: {link}\nBitte kontaktiere einen Admin zur Freigabe."
             )
             return
 
-# --- Befehl /link zum Hinzufügen von Links zur Whitelist ---
+# --- Befehl /link zum Hinzufügen eines Links zur Whitelist ---
 async def add_link(update, context):
-    username = update.message.from_user.username
-    logging.info(f"/link-Befehl empfangen von @{username}")
-
     if len(context.args) != 1:
         await update.message.reply_text("Bitte benutze: /link <URL>")
-        logging.warning(f"Falsche Eingabe von @{username}: /link-Befehl ohne gültige URL")
         return
 
     link = context.args[0].strip()
@@ -87,35 +69,26 @@ async def add_link(update, context):
             await update.message.reply_text("Der Link wurde bereits freigegeben.")
     else:
         await update.message.reply_text("Ungültiger Telegram-Link. Nur t.me-Links sind erlaubt.")
-        logging.warning(f"Ungültiger Link von @{username}: {link}")
 
 # --- Hauptfunktion zum Starten des Bots ---
 async def main():
-    logging.info("Bot wird initialisiert.")
-    
-    # Bot-Initialisierung
     application = Application.builder().token(TOKEN).build()
 
-    # Handler für Gruppen-Nachrichten
+    # Handler hinzufügen
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_telegram_links))
-
-    # Handler für den Befehl /link
     application.add_handler(CommandHandler("link", add_link))
 
-    # Bot starten und sauber beenden
+    # Bot starten
     await application.initialize()
+    await application.start()
+    logging.info("Bot läuft... Drücke STRG+C zum Beenden.")
+
+    # Warten, bis STRG+C gedrückt wird
     try:
-        await application.start()
-        await application.updater.start_polling()
-        logging.info("Bot läuft... Drücke STRG+C zum Beenden.")
-        
-        # Einfache Schleife, um auf STRG+C zu warten
-        while True:
-            await asyncio.sleep(1)
+        await asyncio.Future()  # Unendliches Warten (ersetzt problematische Warteschleifen)
     except (KeyboardInterrupt, SystemExit):
-        logging.info("Beende den Bot durch STRG+C...")
+        logging.info("Beende den Bot...")
     finally:
-        await application.updater.stop()
         await application.stop()
         await application.shutdown()
 
