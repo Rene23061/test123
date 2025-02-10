@@ -1,5 +1,5 @@
 import sqlite3
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters, ApplicationBuilder
 import re
 import logging
 
@@ -49,7 +49,7 @@ def is_whitelisted(link):
     return result is not None
 
 # --- Überprüfung der Nachrichten in der Gruppe ---
-def check_telegram_links(update, context):
+async def check_telegram_links(update, context):
     message = update.message.text
     username = update.message.from_user.username
     chat_id = update.message.chat_id
@@ -60,53 +60,52 @@ def check_telegram_links(update, context):
     for link in links:
         if not is_whitelisted(link):
             logging.warning(f"Unerlaubter Link erkannt und gelöscht: {link}")
-            update.message.delete()
-            update.message.reply_text(
+            await update.message.delete()
+            await update.message.reply_text(
                 f"Dieser Link ist nicht erlaubt: {link}\nBitte kontaktiere einen Admin zur Freigabe."
             )
             return  # Nur den ersten unerlaubten Link behandeln
 
 # --- Befehl /link zum Hinzufügen von Links zur Whitelist ---
-def add_link(update, context):
+async def add_link(update, context):
     username = update.message.from_user.username
     logging.info(f"/link-Befehl empfangen von @{username}")
 
     if len(context.args) != 1:
-        update.message.reply_text("Bitte benutze: /link <URL>")
+        await update.message.reply_text("Bitte benutze: /link <URL>")
         logging.warning(f"Falsche Eingabe von @{username}: /link-Befehl ohne gültige URL")
         return
 
     link = context.args[0].strip()
     if re.match(r"(https?:\/\/)?t\.me\/\S+", link):
         if add_to_whitelist(link):
-            update.message.reply_text(f"Link erfolgreich freigegeben: {link}")
+            await update.message.reply_text(f"Link erfolgreich freigegeben: {link}")
         else:
-            update.message.reply_text("Der Link wurde bereits freigegeben.")
+            await update.message.reply_text("Der Link wurde bereits freigegeben.")
     else:
-        update.message.reply_text("Ungültiger Telegram-Link. Nur t.me-Links sind erlaubt.")
+        await update.message.reply_text("Ungültiger Telegram-Link. Nur t.me-Links sind erlaubt.")
         logging.warning(f"Ungültiger Link von @{username}: {link}")
 
 # --- Hauptfunktion zum Starten des Bots ---
-def main():
+async def main():
     logging.info("Bot wird initialisiert.")
     
     # Bot-Initialisierung
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application = ApplicationBuilder().token(TOKEN).build()
 
     # Handler für Gruppen-Nachrichten
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_telegram_links))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_telegram_links))
 
     # Handler für den Befehl /link
-    dp.add_handler(CommandHandler("link", add_link))
+    application.add_handler(CommandHandler("link", add_link))
 
     # Bot starten
     logging.info("Bot startet das Polling...")
-    updater.start_polling()
-    updater.idle()
+    await application.run_polling()
 
 if __name__ == '__main__':
+    import asyncio
     try:
-        main()
+        asyncio.run(main())
     except Exception as e:
         logging.error(f"Unerwarteter Fehler: {e}", exc_info=True)
