@@ -100,21 +100,34 @@ async def main():
     # Handler für den Befehl /link
     application.add_handler(CommandHandler("link", add_link))
 
-    # Bot starten und korrekt stoppen
-    logging.info("Bot startet das Polling...")
+    # Ereignis, um den Bot bei KeyboardInterrupt zu stoppen
+    stop_event = asyncio.Event()
+
+    async def stop_bot(*args):
+        logging.info("Empfange Stop-Signal, beende den Bot...")
+        stop_event.set()
+
+    # Registriere Signal-Handler
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(asyncio.CancelledError, lambda: asyncio.create_task(stop_bot()))
+
+    # Bot starten und sauber beenden
     await application.initialize()
     try:
         await application.start()
         await application.updater.start_polling()
-        while True:  # Damit der Bot im Vordergrund bleibt
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        logging.info("Bot wird gestoppt...")
+        logging.info("Bot läuft... Drücke STRG+C zum Beenden.")
+        await stop_event.wait()  # Warten, bis das Stop-Signal empfangen wird
+    except Exception as e:
+        logging.error(f"Fehler während der Laufzeit: {e}")
     finally:
-        logging.info("Beende alle Prozesse...")
-        await application.updater.stop()  # Wichtiger Schritt, um den Fehler zu vermeiden
+        logging.info("Beende den Bot...")
+        await application.updater.stop()
         await application.stop()
         await application.shutdown()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Bot durch STRG+C beendet.")
