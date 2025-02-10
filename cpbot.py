@@ -15,73 +15,65 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS whitelist (
-            link TEXT PRIMARY KEY
+            chat_id INTEGER,
+            link TEXT,
+            PRIMARY KEY (chat_id, link)
         )
     """)
     conn.commit()
     print("✅ Datenbank erfolgreich initialisiert.")
     return conn, cursor
 
-# --- Überprüfung, ob ein Link in der Whitelist ist ---
-def is_whitelisted(link, cursor):
-    cursor.execute("SELECT link FROM whitelist WHERE link = ?", (link,))
+# --- Überprüfung, ob ein Link in der Whitelist der Gruppe ist ---
+def is_whitelisted(chat_id, link, cursor):
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     result = cursor.fetchone()
     return result is not None
 
-# --- Nur im privaten Chat erlauben ---
-async def private_chat_only(update: Update):
-    if update.message.chat.type != "private":
-        await update.message.reply_text("❌ Dieser Befehl kann nur im privaten Chat mit dem Bot verwendet werden.")
-        return False
-    return True
-
-# --- Befehl: /link <URL> (Link zur Whitelist hinzufügen) ---
+# --- Befehl: /link <URL> (Link zur Whitelist der aktuellen Gruppe hinzufügen) ---
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await private_chat_only(update):
-        return
-
     if len(context.args) != 1:
         await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /link https://t.me/gruppe")
         return
 
+    chat_id = update.message.chat_id
     link = context.args[0].strip()
+
     try:
-        cursor.execute("INSERT INTO whitelist (link) VALUES (?)", (link,))
+        cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
         conn.commit()
-        await update.message.reply_text(f"✅ Der Link {link} wurde erfolgreich zur Whitelist hinzugefügt.")
+        await update.message.reply_text(f"✅ Der Link {link} wurde erfolgreich zur Whitelist der Gruppe hinzugefügt.")
     except sqlite3.IntegrityError:
-        await update.message.reply_text("⚠️ Der Link ist bereits in der Whitelist.")
+        await update.message.reply_text("⚠️ Der Link ist bereits in der Whitelist der Gruppe.")
 
-# --- Befehl: /del <URL> (Link aus der Whitelist löschen) ---
+# --- Befehl: /del <URL> (Link aus der Whitelist der aktuellen Gruppe löschen) ---
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await private_chat_only(update):
-        return
-
     if len(context.args) != 1:
         await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /del https://t.me/gruppe")
         return
 
+    chat_id = update.message.chat_id
     link = context.args[0].strip()
-    cursor.execute("DELETE FROM whitelist WHERE link = ?", (link,))
+
+    cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     conn.commit()
 
     if cursor.rowcount > 0:
-        await update.message.reply_text(f"✅ Der Link {link} wurde erfolgreich aus der Whitelist gelöscht.")
+        await update.message.reply_text(f"✅ Der Link {link} wurde erfolgreich aus der Whitelist der Gruppe gelöscht.")
     else:
-        await update.message.reply_text(f"⚠️ Der Link {link} war nicht in der Whitelist.")
+        await update.message.reply_text(f"⚠️ Der Link {link} war nicht in der Whitelist der Gruppe.")
 
-# --- Befehl: /list (Alle Links aus der Whitelist anzeigen) ---
+# --- Befehl: /list (Alle Links aus der Whitelist der aktuellen Gruppe anzeigen) ---
 async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await private_chat_only(update):
-        return
+    chat_id = update.message.chat_id
 
-    cursor.execute("SELECT link FROM whitelist")
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
     links = cursor.fetchall()
 
     if links:
-        response = "📋 **Whitelist:**\n" + "\n".join(f"- {link[0]}" for link in links)
+        response = "📋 **Whitelist dieser Gruppe:**\n" + "\n".join(f"- {link[0]}" for link in links)
     else:
-        response = "❌ Die Whitelist ist leer."
+        response = "❌ Die Whitelist dieser Gruppe ist leer."
 
     await update.message.reply_text(response, parse_mode="Markdown")
 
@@ -101,8 +93,8 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         link = match.group(0)
         print(f"🔗 Erkannter Telegram-Link: {link}")
 
-        # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
-        if not is_whitelisted(link, cursor):
+        # Wenn der Link nicht in der Whitelist der aktuellen Gruppe steht, Nachricht löschen
+        if not is_whitelisted(chat_id, link, cursor):
             print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
             await context.bot.send_message(
                 chat_id=chat_id,
