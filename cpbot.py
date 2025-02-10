@@ -1,7 +1,8 @@
 import sqlite3
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, ApplicationBuilder
+from telegram.ext import CommandHandler, MessageHandler, filters, Application
 import re
 import logging
+import asyncio
 
 # --- Logging konfigurieren ---
 logging.basicConfig(
@@ -91,7 +92,7 @@ async def main():
     logging.info("Bot wird initialisiert.")
     
     # Bot-Initialisierung
-    application = ApplicationBuilder().token(TOKEN).build()
+    application = Application.builder().token(TOKEN).build()
 
     # Handler für Gruppen-Nachrichten
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_telegram_links))
@@ -99,13 +100,14 @@ async def main():
     # Handler für den Befehl /link
     application.add_handler(CommandHandler("link", add_link))
 
-    # Bot starten
+    # Bot starten und sicherstellen, dass er korrekt beendet wird
     logging.info("Bot startet das Polling...")
-    await application.run_polling()
+    async with application:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        await application.stop()
+        await application.shutdown()
 
 if __name__ == '__main__':
-    import asyncio
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        logging.error(f"Unerwarteter Fehler: {e}", exc_info=True)
+    asyncio.run(main())
