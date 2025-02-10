@@ -111,6 +111,8 @@ async def main():
     except KeyboardInterrupt:
         logging.info("Bot wird gestoppt...")
     finally:
+        logging.info("Beende alle Prozesse...")
+        await application.updater.stop()  # Wichtiger Schritt, um den Fehler zu vermeiden
         await application.stop()
         await application.shutdown()
 
