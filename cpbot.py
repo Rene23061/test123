@@ -1,64 +1,58 @@
 import logging
 import asyncio
-from telegram.ext import Application, MessageHandler, filters
+from telegram.ext import Application
 
 # --- Logging konfigurieren ---
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logging.getLogger("telegram").setLevel(logging.DEBUG)
 
 logging.info("Bot wird gestartet...")
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
-# --- Funktion zum Abrufen von Gruppen- und Themen-Infos ---
-async def fetch_group_info(application: Application):
-    logging.info("Abrufen der Gruppeninformationen...")
-
-    # Beispiel: ID der Gruppe, mit der du testen willst (später automatisierbar)
-    # Die ID sollte durch vorherige Tests bekannt sein oder dynamisch geholt werden
-    chat_id = -1001234567890  # Beispiel-Chat-ID (Supergruppe)
-
+# --- Gruppeninformationen abrufen ---
+async def fetch_group_and_topics(application):
     try:
-        chat = await application.bot.get_chat(chat_id)
-        logging.info(f"Erfolgreich verbunden mit der Gruppe: {chat.title} (ID: {chat.id})")
+        # Hole die letzten Updates, um die Gruppen-ID dynamisch zu finden
+        updates = await application.bot.get_updates()
 
-        # Prüfen, ob die Gruppe Themen unterstützt (Supergruppen)
-        if chat.is_forum:
-            logging.info(f"Die Gruppe '{chat.title}' hat Themen aktiviert.")
-        else:
-            logging.info(f"Die Gruppe '{chat.title}' hat KEINE Themen aktiviert.")
+        # Suche nach der ersten relevanten Gruppen-Nachricht
+        for update in updates:
+            if update.message and (update.message.chat.type == "group" or update.message.chat.type == "supergroup"):
+                chat = update.message.chat
 
+                logging.info(f"Erfolgreich verbunden mit der Gruppe: {chat.title} (ID: {chat.id})")
+
+                # Prüfe, ob die Gruppe Themen (Foren) unterstützt
+                if chat.is_forum:
+                    logging.info(f"Die Gruppe '{chat.title}' hat Themen aktiviert.")
+                    topics = await application.bot.get_forum_topic_list(chat.id)
+                    
+                    for topic in topics:
+                        logging.info(f"Gefundenes Thema: {topic.name} (Thema-ID: {topic.id})")
+                else:
+                    logging.info(f"Die Gruppe '{chat.title}' hat KEINE Themen aktiviert.")
+                
+                return  # Sobald eine Gruppe gefunden ist, beenden wir die Suche
+
+        logging.info("Keine Gruppen mit relevanten Nachrichten gefunden.")
     except Exception as e:
         logging.error(f"Fehler beim Abrufen der Gruppeninformationen: {e}")
-
-# --- Nachricht behandeln ---
-async def handle_message(update, context):
-    message = update.message.text
-    username = update.message.from_user.username if update.message.from_user else "Unbekannt"
-    chat_id = update.message.chat_id
-
-    logging.info(f"Nachricht empfangen von @{username} in Chat {chat_id}: {message}")
 
 # --- Hauptfunktion zum Starten des Bots ---
 async def main():
     logging.info("Initialisiere die Anwendung...")
     application = Application.builder().token(TOKEN).build()
 
-    logging.info("Abrufen der Gruppeninformationen beim Start...")
-    # Abrufen der Gruppen-Infos beim Start
-    await fetch_group_info(application)
+    logging.info("Hole Gruppen- und Themeninformationen...")
+    await fetch_group_and_topics(application)
 
-    logging.info("Füge Nachrichten-Handler hinzu...")
-    application.add_handler(MessageHandler(filters.ALL, handle_message))
-
-    logging.info("Starte den Bot...")
+    logging.info("Bot wurde erfolgreich gestartet. Keine weiteren Aktionen konfiguriert.")
     await application.initialize()
     await application.start()
-    logging.info("Bot läuft... Drücke STRG+C zum Beenden.")
 
     # Warten auf STRG+C
     try:
@@ -66,3 +60,9 @@ async def main():
     except (KeyboardInterrupt, SystemExit):
         logging.info("Beende den Bot...")
     finally:
+        await application.stop()
+        await application.shutdown()
+        logging.info("Bot wurde erfolgreich beendet.")
+
+if __name__ == '__main__':
+    asyncio.run(main())
