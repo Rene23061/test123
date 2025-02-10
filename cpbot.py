@@ -3,7 +3,6 @@ from telegram.ext import CommandHandler, MessageHandler, filters, Application
 import re
 import logging
 import asyncio
-import signal
 
 # --- Logging konfigurieren ---
 logging.basicConfig(
@@ -101,35 +100,19 @@ async def main():
     # Handler für den Befehl /link
     application.add_handler(CommandHandler("link", add_link))
 
-    # Ereignis, um den Bot bei KeyboardInterrupt oder SIGTERM zu stoppen
-    stop_event = asyncio.Event()
-
-    def stop_bot(*args):
-        logging.info("Empfange Stop-Signal, beende den Bot...")
-        stop_event.set()
-
-    # Registriere Signal-Handler für SIGINT (STRG+C) und SIGTERM
-    loop = asyncio.get_running_loop()
-    loop.add_signal_handler(signal.SIGINT, stop_bot)
-    loop.add_signal_handler(signal.SIGTERM, stop_bot)
-
     # Bot starten und sauber beenden
     await application.initialize()
     try:
         await application.start()
         await application.updater.start_polling()
         logging.info("Bot läuft... Drücke STRG+C zum Beenden.")
-        await stop_event.wait()  # Warten, bis das Stop-Signal empfangen wird
-    except Exception as e:
-        logging.error(f"Fehler während der Laufzeit: {e}")
-    finally:
+        await asyncio.Event().wait()  # Wartet auf STRG+C
+    except (KeyboardInterrupt, SystemExit):
         logging.info("Beende den Bot...")
+    finally:
         await application.updater.stop()
         await application.stop()
         await application.shutdown()
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logging.info("Bot durch STRG+C beendet.")
+    asyncio.run(main())
