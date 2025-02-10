@@ -56,7 +56,9 @@ async def check_telegram_links(update, context):
     chat_id = update.message.chat_id
 
     logging.info(f"Prüfe Nachricht von @{username} in Chat {chat_id}: {message}")
-    links = re.findall(r"(https?:\/\/)?t\.me\/\S+", message)
+    
+    # Alle Telegram-Gruppen-Links filtern
+    links = re.findall(r"(https?:\/\/)?t\.me\/[a-zA-Z0-9_-]+", message)
 
     for link in links:
         if not is_whitelisted(link):
@@ -78,7 +80,7 @@ async def add_link(update, context):
         return
 
     link = context.args[0].strip()
-    if re.match(r"(https?:\/\/)?t\.me\/\S+", link):
+    if re.match(r"(https?:\/\/)?t\.me\/[a-zA-Z0-9_-]+", link):
         if add_to_whitelist(link):
             await update.message.reply_text(f"Link erfolgreich freigegeben: {link}")
         else:
@@ -106,9 +108,12 @@ async def main():
         await application.start()
         await application.updater.start_polling()
         logging.info("Bot läuft... Drücke STRG+C zum Beenden.")
-        await asyncio.Event().wait()  # Wartet auf STRG+C
+        
+        # Einfache Schleife, um auf STRG+C zu warten
+        while True:
+            await asyncio.sleep(1)
     except (KeyboardInterrupt, SystemExit):
-        logging.info("Beende den Bot...")
+        logging.info("Beende den Bot durch STRG+C...")
     finally:
         await application.updater.stop()
         await application.stop()
