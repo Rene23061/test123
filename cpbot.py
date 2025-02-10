@@ -46,10 +46,13 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
         if not is_whitelisted(link, cursor):
             print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
-            # Antwort senden (ohne Reply)
+            
+            # Freundliche Nachricht an den Benutzer senden
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"❌ Der Link {link} ist nicht erlaubt und wurde entfernt."
+                text=f"🚫 Hallo @{user}, dein Link wurde automatisch gelöscht. "
+                     f"Bitte kontaktiere einen Admin, wenn du Fragen hast.",
+                reply_to_message_id=message.message_id
             )
             # Nachricht löschen
             await context.bot.delete_message(chat_id, message.message_id)
