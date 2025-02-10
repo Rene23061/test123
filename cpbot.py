@@ -31,7 +31,7 @@ def is_whitelisted(link, cursor):
 # --- Nur im privaten Chat erlauben ---
 async def private_chat_only(update: Update):
     if update.message.chat.type != "private":
-        await update.message.reply_text("❌ Dieser Befehl kann nur im privaten Chat mit dem Bot verwendet werden.")
+        await update.message.reply_text("❌ Dieser Befehl kann nicht verwendet werden.")
         return False
     return True
 
