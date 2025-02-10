@@ -24,6 +24,11 @@ def init_db():
     print("✅ Datenbank erfolgreich initialisiert.")
     return conn, cursor
 
+# --- Überprüfung, ob ein Benutzer Admin ist ---
+async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_member = await context.bot.get_chat_member(update.message.chat_id, update.message.from_user.id)
+    return chat_member.status in ["administrator", "creator"]
+
 # --- Überprüfung, ob ein Link in der Whitelist der Gruppe ist ---
 def is_whitelisted(chat_id, link, cursor):
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
@@ -32,6 +37,10 @@ def is_whitelisted(chat_id, link, cursor):
 
 # --- Befehl: /link <URL> (Link zur Whitelist der aktuellen Gruppe hinzufügen) ---
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(update, context):
+        await update.message.reply_text("❌ Nur Administratoren können Links zur Whitelist hinzufügen.")
+        return
+
     if len(context.args) != 1:
         await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /link https://t.me/gruppe")
         return
@@ -48,6 +57,10 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Befehl: /del <URL> (Link aus der Whitelist der aktuellen Gruppe löschen) ---
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(update, context):
+        await update.message.reply_text("❌ Nur Administratoren können Links aus der Whitelist löschen.")
+        return
+
     if len(context.args) != 1:
         await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /del https://t.me/gruppe")
         return
@@ -65,6 +78,10 @@ async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Befehl: /list (Alle Links aus der Whitelist der aktuellen Gruppe anzeigen) ---
 async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(update, context):
+        await update.message.reply_text("❌ Nur Administratoren können die Whitelist anzeigen.")
+        return
+
     chat_id = update.message.chat_id
 
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
