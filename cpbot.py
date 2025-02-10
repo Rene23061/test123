@@ -9,7 +9,7 @@ logging.basicConfig(
     filename="bot_debug.log",
     filemode='a',
     format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG  # Alle Debug-, Info- und Fehlernachrichten protokollieren
+    level=logging.DEBUG
 )
 
 logging.info("Bot wird gestartet...")
@@ -37,7 +37,7 @@ def add_to_whitelist(link):
         return True
     except sqlite3.IntegrityError:
         logging.warning(f"Link existiert bereits in der Whitelist: {link}")
-        return False  # Link existiert bereits
+        return False
 
 # --- Überprüfung, ob ein Link in der Whitelist ist ---
 def is_whitelisted(link):
@@ -65,7 +65,7 @@ async def check_telegram_links(update, context):
             await update.message.reply_text(
                 f"Dieser Link ist nicht erlaubt: {link}\nBitte kontaktiere einen Admin zur Freigabe."
             )
-            return  # Nur den ersten unerlaubten Link behandeln
+            return
 
 # --- Befehl /link zum Hinzufügen von Links zur Whitelist ---
 async def add_link(update, context):
@@ -100,12 +100,17 @@ async def main():
     # Handler für den Befehl /link
     application.add_handler(CommandHandler("link", add_link))
 
-    # Bot starten und sicherstellen, dass er korrekt beendet wird
+    # Bot starten und korrekt stoppen
     logging.info("Bot startet das Polling...")
-    async with application:
-        await application.initialize()
+    await application.initialize()
+    try:
         await application.start()
         await application.updater.start_polling()
+        while True:  # Damit der Bot im Vordergrund bleibt
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("Bot wird gestoppt...")
+    finally:
         await application.stop()
         await application.shutdown()
 
