@@ -97,7 +97,14 @@ async def user_account(update: Update, context: CallbackContext):
 # 📌 Admin-Panel: Holt ALLE Nutzer für die Gruppe aus dem Willkommens-Text
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
-    chat_id = int(query.data.split("_")[1])  # Holt die Gruppen-ID aus dem Willkommens-Text!
+    data = query.data.split("_")
+
+    # 🔍 Prüfen, ob die Gruppen-ID gültig ist
+    if len(data) > 1 and data[1].lstrip('-').isdigit():  
+        chat_id = int(data[1])  # Nutze die übergebene Gruppen-ID
+    else:
+        chat_id = query.message.chat_id  # Fallback auf Gruppen-ID aus dem Chat
+        print(f"[WARNUNG] ⚠️ Keine gültige Gruppen-ID in query.data gefunden! Nutze Fallback: {chat_id}")
 
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
