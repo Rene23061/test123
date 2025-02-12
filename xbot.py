@@ -41,7 +41,7 @@ async def user_account(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     private_chat_id = user.id
 
-    # ❌ Verhindert, dass der Bot einem anderen Bot schreibt
+    # ❌ Verhindert, dass der Bot sich selbst anschreibt oder andere Bots
     if user.is_bot:
         return  
 
@@ -63,6 +63,7 @@ async def user_account(update: Update, context: CallbackContext):
         [InlineKeyboardButton("🛠 Einstellungen", callback_data=f"settings_{chat_id}")]
     ]
 
+    # ✅ Admin-Button NUR für Admins
     if user.id in ADMIN_LIST:
         keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten (Admin)", callback_data=f"admin_manage_{chat_id}")])
 
@@ -71,30 +72,20 @@ async def user_account(update: Update, context: CallbackContext):
     # ✅ Direkt das Menü im Privat-Chat senden
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# ✅ Button-Klicks verarbeiten (Fix für fehlende `button_handler`)
-async def button_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user = query.from_user
-    private_chat_id = user.id
-    callback_data = query.data.split("_")
-    action = callback_data[0]
-    chat_id = callback_data[1]
+# ✅ `/konto` wird automatisch zum Privat-Chat geleitet (Fix für Admins & Gruppeninhaber)
+async def konto_redirect(update: Update, context: CallbackContext):
+    user = update.effective_user
+    chat_id = update.effective_chat.id
 
-    # ❌ Verhindert, dass der Bot sich selbst oder andere Bots anschreibt
+    # ❌ Falls ein Bot versucht, /konto zu nutzen, ignorieren wir ihn.
     if user.is_bot:
         return  
 
+    # ✅ Falls der Nutzer noch nicht in der Datenbank ist, fügen wir ihn hinzu
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
-    if action == "show_balance":
-        coins = get_user_coins(user.id, chat_id)
-        await query.edit_message_text(text=f"📊 Dein aktuelles Guthaben für Gruppe `{chat_id}`: **{coins} Coins**")
-    elif action == "show_purchases":
-        await query.edit_message_text(text="📜 Deine Käufe sind bald einsehbar!")
-    elif action == "top_up":
-        await query.edit_message_text(text="💳 Guthaben aufladen wird bald freigeschaltet!")
-    elif action == "settings":
-        await query.edit_message_text(text="🛠 Einstellungen sind bald verfügbar!")
+    # ✅ Direkt das Menü senden
+    await user_account(update, context)
 
 # ✅ Start-Befehl für den Bot
 async def start(update: Update, context: CallbackContext):
@@ -105,21 +96,13 @@ async def start(update: Update, context: CallbackContext):
 
     await context.bot.send_message(chat_id=user.id, text="✅ Nutze /konto in deiner Gruppe, um dein Menü zu öffnen!")
 
-# ✅ `/konto` wird automatisch zum Privat-Chat geleitet
-async def konto_redirect(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if user.is_bot:
-        return  # ❌ Bots können keine Privatnachrichten bekommen
-
-    await user_account(update, context)
-
 # ✅ Hauptfunktion zum Starten des Bots
 def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("konto", konto_redirect))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CommandHandler("konto", konto_redirect))  # `/konto` öffnet IMMER das Privat-Menü
+    app.add_handler(CallbackQueryHandler(user_account))  # Behebt, dass Gruppeninhaber das Menü nicht sieht
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
