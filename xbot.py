@@ -1,5 +1,4 @@
 import sqlite3
-import re  # Regex für sicheres Extrahieren der Gruppen-ID
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
 
@@ -100,17 +99,20 @@ async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
 
-    chat_id = None
+    user_id = query.from_user.id
 
-    # 🔍 Gruppen-ID direkt aus dem Willkommens-Text holen (Regex)
-    match = re.search(r"Gruppe:\s`(-?\d+)`", query.message.text)
-    if match:
-        chat_id = int(match.group(1))
-        print(f"[INFO] ℹ️ Gruppen-ID aus Willkommens-Text extrahiert: {chat_id}")
-    elif len(data) > 1 and data[1].lstrip('-').isdigit():
-        chat_id = int(data[1])  # Falls es in den Callback-Daten steht
+    # 📌 Holt die Gruppen-ID **direkt aus der Datenbank**
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT chat_id FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        chat_id = row[0]
+        print(f"[INFO] ℹ️ Gruppen-ID aus Datenbank geladen: {chat_id}")
     else:
-        print("[ERROR] ❌ Konnte Gruppen-ID nicht ermitteln!")
+        print("[ERROR] ❌ Konnte Gruppen-ID nicht aus Datenbank laden!")
         await query.message.edit_text("⚠️ Fehler: Gruppen-ID konnte nicht erkannt werden!")
         return
 
