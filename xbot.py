@@ -9,28 +9,29 @@ TOKEN = "7507729922:AAHLtY0h7rYMswxm2OVWnK3W-cq5-A4cXVQ"
 def connect_db():
     return sqlite3.connect('shop_database.db')
 
-# Nutzer registrieren, falls nicht vorhanden
-def register_user_if_not_exists(user_id, username, first_name, last_name):
+# Nutzer registrieren, falls nicht vorhanden (jetzt mit Gruppen-ID)
+def register_user_if_not_exists(user_id, chat_id, username, first_name, last_name):
     conn = connect_db()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+    # Prüfen, ob der Nutzer in dieser Gruppe bereits existiert
+    cursor.execute("SELECT id FROM users WHERE id = ? AND chat_id = ?", (user_id, chat_id))
     if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO users (id, username, first_name, last_name, coins) VALUES (?, ?, ?, ?, ?)",
-                       (user_id, username, first_name, last_name, 0))
+        cursor.execute("INSERT INTO users (id, chat_id, username, first_name, last_name, coins) VALUES (?, ?, ?, ?, ?, ?)",
+                       (user_id, chat_id, username, first_name, last_name, 0))
         conn.commit()
 
     conn.close()
 
-# Benutzerkonto-Menü anzeigen
+# Benutzerkonto-Menü anzeigen (jetzt mit Gruppen-ID)
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.effective_chat.id
-    register_user_if_not_exists(user.id, user.username, user.first_name, user.last_name)
+    chat_id = update.effective_chat.id  # Gruppen-ID holen
+    register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
     # Begrüßungstext
     welcome_text = (
-        f"👤 **Benutzerkonto für {user.first_name}**\n"
+        f"👤 **Benutzerkonto für {user.first_name}** (Gruppe: {chat_id})\n"
         "Hier kannst du dein Guthaben verwalten und deine Käufe einsehen.\n"
         "Wähle eine Option:"
     )
@@ -50,12 +51,13 @@ async def user_account(update: Update, context: CallbackContext):
 async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     user = query.from_user
+    chat_id = query.message.chat.id  # Gruppen-ID holen
 
     # Nutzer prüfen & registrieren, falls nicht vorhanden
-    register_user_if_not_exists(user.id, user.username, user.first_name, user.last_name)
+    register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
     if query.data == "show_balance":
-        await query.edit_message_text(text="📊 Dein aktuelles Guthaben: 0 Coins (Funktion bald verfügbar!)")
+        await query.edit_message_text(text=f"📊 Dein aktuelles Guthaben in dieser Gruppe ({chat_id}): 0 Coins (Funktion bald verfügbar!)")
     elif query.data == "show_purchases":
         await query.edit_message_text(text="📜 Deine Käufe sind bald einsehbar!")
     elif query.data == "top_up":
@@ -63,16 +65,13 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data == "settings":
         await query.edit_message_text(text="🛠 Einstellungen sind bald verfügbar!")
 
-# Start-Befehl für den Bot (prüft, ob aus einer Gruppe oder privat)
+# Start-Befehl für den Bot (nur für Gruppen)
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.effective_chat.id
-    register_user_if_not_exists(user.id, user.username, user.first_name, user.last_name)
+    chat_id = update.effective_chat.id  # Gruppen-ID holen
+    register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
-    if update.effective_chat.type in ["group", "supergroup"]:
-        await context.bot.send_message(chat_id=chat_id, text="✅ Nutze /konto, um dein Menü zu öffnen.")
-    else:
-        await context.bot.send_message(chat_id=chat_id, text="✅ Nutze diesen Bot in einer Gruppe.")
+    await context.bot.send_message(chat_id=chat_id, text="✅ Nutze /konto, um dein Menü zu öffnen.")
 
 # Hauptfunktion zum Starten des Bots
 def main():
