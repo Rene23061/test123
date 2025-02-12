@@ -1,4 +1,5 @@
 import sqlite3
+import re  # Regex für sicheres Extrahieren der Gruppen-ID
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
 
@@ -94,30 +95,40 @@ async def user_account(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Admin-Panel mit Gruppen-ID aus Willkommens-Text
+# 📌 Admin-Panel ersetzt das Menü und zeigt die Nutzer der Gruppe an
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
 
-    # 🔍 Gruppen-ID direkt aus dem Willkommens-Text holen
-    if len(data) > 1 and data[1].lstrip('-').isdigit():  
-        chat_id = int(data[1])
-    else:
-        chat_id = query.message.text.split("`")[1]  # ID aus dem Text holen
+    chat_id = None
+
+    # 🔍 Gruppen-ID direkt aus dem Willkommens-Text holen (Regex)
+    match = re.search(r"Gruppe:\s`(-?\d+)`", query.message.text)
+    if match:
+        chat_id = int(match.group(1))
         print(f"[INFO] ℹ️ Gruppen-ID aus Willkommens-Text extrahiert: {chat_id}")
+    elif len(data) > 1 and data[1].lstrip('-').isdigit():
+        chat_id = int(data[1])  # Falls es in den Callback-Daten steht
+    else:
+        print("[ERROR] ❌ Konnte Gruppen-ID nicht ermitteln!")
+        await query.message.edit_text("⚠️ Fehler: Gruppen-ID konnte nicht erkannt werden!")
+        return
 
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
     users = get_all_users(chat_id)  # Holt alle Nutzer mit dieser Gruppen-ID
 
     if not users:
-        await query.message.reply_text("⚠️ Keine Nutzer in der Datenbank gefunden!")
+        await query.message.edit_text("⚠️ Keine Nutzer in der Datenbank gefunden!")
         return
 
+    # 📌 Hier ersetzen wir das Menü durch die Nutzerliste
     keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users]
+    keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data=f"admin_back_{chat_id}")])  # Zurück-Button
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.message.reply_text("🔹 Wähle einen Nutzer:", reply_markup=reply_markup)
+    await query.message.edit_text("🔹 Wähle einen Nutzer für Guthaben-Verwaltung:", reply_markup=reply_markup)
 
 # 📌 Hauptfunktion zum Starten des Bots
 def main():
