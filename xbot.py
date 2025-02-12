@@ -62,7 +62,7 @@ async def user_account(update: Update, context: CallbackContext):
     ]
 
     if is_admin_user:
-        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
+        keyboard.append([InlineKeyboardButton(f"⚙️ Guthaben verwalten ({chat_id})", callback_data=f"admin_manage_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -81,14 +81,18 @@ async def konto_redirect(update: Update, context: CallbackContext):
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
     await user_account(update, context)
 
-# Admin-Panel öffnen (richtige Chat-ID verwenden)
+# Admin-Panel öffnen (Fix für Chat-ID Fehler)
 async def admin_menu(update: Update, context: CallbackContext):
     query = update.callback_query
     user = query.from_user
 
-    # Chat-ID aus Callback-Data holen, um sicherzustellen, dass es die richtige Gruppen-ID ist
+    # Sicherstellen, dass die Gruppen-ID richtig gelesen wird
     data = query.data.split("_")
-    chat_id = int(data[1]) if len(data) > 1 else query.message.chat_id
+    
+    try:
+        chat_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else query.message.chat_id
+    except Exception:
+        chat_id = query.message.chat_id
 
     print(f"[DEBUG] Admin-Panel von {user.id} in Chat {chat_id} angefordert")
 
@@ -100,7 +104,7 @@ async def admin_menu(update: Update, context: CallbackContext):
         await context.bot.send_message(chat_id=user.id, text="⛔ Du bist kein Admin!")
         return
 
-    await context.bot.send_message(chat_id=user.id, text="⚙️ Admin-Panel geöffnet!")
+    await context.bot.send_message(chat_id=user.id, text=f"⚙️ Admin-Panel für Gruppe {chat_id} geöffnet!")
 
 # Hauptfunktion zum Starten des Bots
 def main():
