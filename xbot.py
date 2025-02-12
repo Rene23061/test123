@@ -60,7 +60,7 @@ async def is_admin(context: CallbackContext, user_id, chat_id):
         print(f"[ERROR] Fehler bei Admin-Check für {user_id} in Chat {chat_id}: {e}")
         return False
 
-# 📌 Benutzerkonto-Menü im Privat-Chat anzeigen (richtige Gruppen-ID verwenden!)
+# 📌 Benutzerkonto-Menü im Privat-Chat anzeigen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.message.chat_id
@@ -84,20 +84,27 @@ async def user_account(update: Update, context: CallbackContext):
         [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")]
     ]
 
-    # ✅ Admin-Button ist JETZT wirklich nur für Admins sichtbar
+    # ✅ Admin-Button nur für Admins sichtbar
     if is_admin_user:
         print(f"[DEBUG] ✅ Admin-Button für {user.id} sichtbar.")
-        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage")])
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
     else:
         print(f"[DEBUG] ❌ Admin-Button für {user.id} NICHT sichtbar.")
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Admin-Panel: Holt ALLE Nutzer für die Gruppe aus dem Willkommens-Text
+# 📌 Admin-Panel mit Gruppen-ID aus Willkommens-Text
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
-    chat_id = int(query.message.text.split("`")[1])  # Holt die Gruppen-ID direkt aus dem Willkommens-Text!
+    data = query.data.split("_")
+
+    # 🔍 Gruppen-ID direkt aus dem Willkommens-Text holen
+    if len(data) > 1 and data[1].lstrip('-').isdigit():  
+        chat_id = int(data[1])
+    else:
+        chat_id = query.message.text.split("`")[1]  # ID aus dem Text holen
+        print(f"[INFO] ℹ️ Gruppen-ID aus Willkommens-Text extrahiert: {chat_id}")
 
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
@@ -120,7 +127,7 @@ def main():
 
     app.add_handler(CommandHandler("start", user_account))  
     app.add_handler(CommandHandler("konto", user_account))  
-    app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage$"))  
+    app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage_"))  
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
