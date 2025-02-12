@@ -57,6 +57,8 @@ async def user_account(update: Update, context: CallbackContext):
 
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
+    print(f"[DEBUG] /konto aufgerufen von {user.id} in Chat {chat_id}")
+
     welcome_text = f"👤 Benutzerkonto für {user.first_name}\n📌 Gruppe: {chat_id}\nHier kannst du dein Guthaben verwalten."
 
     keyboard = [
@@ -84,7 +86,14 @@ async def konto_redirect(update: Update, context: CallbackContext):
 # Zeigt alle Nutzer als Buttons für den Admin
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
-    chat_id = int(query.data.split("_")[1])
+    data = query.data.split("_")
+    
+    if len(data) > 1:
+        chat_id = data[1]
+    else:
+        chat_id = query.message.chat_id  # Falls fehlerhafte Daten kommen
+
+    print(f"[DEBUG] Admin-Panel geöffnet in Gruppe {chat_id}")
 
     users = get_all_users(chat_id)
     keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users]
