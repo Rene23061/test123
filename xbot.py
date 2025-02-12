@@ -35,28 +35,15 @@ def get_user_coins(user_id, chat_id):
     conn.close()
     return result[0] if result else 0
 
-# ✅ Benutzer-Info (TEST-ZWECKE)
-async def user_info(update: Update, context: CallbackContext):
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-
-    register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
-    coins = get_user_coins(user.id, chat_id)
-
-    info_text = (
-        f"🔍 **Benutzer-Check**\n"
-        f"👤 **ID:** `{user.id}`\n"
-        f"👥 **Gruppe:** `{chat_id}`\n"
-        f"💰 **Guthaben:** `{coins} Coins`\n"
-    )
-
-    await update.message.reply_text(info_text, parse_mode="Markdown")
-
 # ✅ Benutzerkonto-Menü jetzt **automatisch** im Privat-Chat öffnen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id
     private_chat_id = user.id
+
+    # ❌ Verhindert, dass der Bot einem anderen Bot schreibt
+    if user.is_bot:
+        return  
 
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
@@ -73,8 +60,7 @@ async def user_account(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{chat_id}")],
         [InlineKeyboardButton("📜 Meine Käufe", callback_data=f"show_purchases_{chat_id}")],
         [InlineKeyboardButton("💳 Guthaben aufladen", callback_data=f"top_up_{chat_id}")],
-        [InlineKeyboardButton("🛠 Einstellungen", callback_data=f"settings_{chat_id}")],
-        [InlineKeyboardButton("🔍 Nutzer-Check", callback_data=f"user_info_{chat_id}")]
+        [InlineKeyboardButton("🛠 Einstellungen", callback_data=f"settings_{chat_id}")]
     ]
 
     if user.id in ADMIN_LIST:
@@ -84,6 +70,31 @@ async def user_account(update: Update, context: CallbackContext):
 
     # ✅ Direkt das Menü im Privat-Chat senden
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+
+# ✅ Button-Klicks verarbeiten (Fix für fehlende `button_handler`)
+async def button_handler(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user = query.from_user
+    private_chat_id = user.id
+    callback_data = query.data.split("_")
+    action = callback_data[0]
+    chat_id = callback_data[1]
+
+    # ❌ Verhindert, dass der Bot sich selbst oder andere Bots anschreibt
+    if user.is_bot:
+        return  
+
+    register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
+
+    if action == "show_balance":
+        coins = get_user_coins(user.id, chat_id)
+        await query.edit_message_text(text=f"📊 Dein aktuelles Guthaben für Gruppe `{chat_id}`: **{coins} Coins**")
+    elif action == "show_purchases":
+        await query.edit_message_text(text="📜 Deine Käufe sind bald einsehbar!")
+    elif action == "top_up":
+        await query.edit_message_text(text="💳 Guthaben aufladen wird bald freigeschaltet!")
+    elif action == "settings":
+        await query.edit_message_text(text="🛠 Einstellungen sind bald verfügbar!")
 
 # ✅ Start-Befehl für den Bot
 async def start(update: Update, context: CallbackContext):
@@ -97,6 +108,9 @@ async def start(update: Update, context: CallbackContext):
 # ✅ `/konto` wird automatisch zum Privat-Chat geleitet
 async def konto_redirect(update: Update, context: CallbackContext):
     user = update.effective_user
+    if user.is_bot:
+        return  # ❌ Bots können keine Privatnachrichten bekommen
+
     await user_account(update, context)
 
 # ✅ Hauptfunktion zum Starten des Bots
@@ -105,7 +119,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("konto", konto_redirect))
-    app.add_handler(CommandHandler("user_info", user_info))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("✅ Bot erfolgreich gestartet!")
