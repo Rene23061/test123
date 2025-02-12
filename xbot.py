@@ -1,11 +1,12 @@
 import sqlite3
 import asyncio
+import nest_asyncio
 from telegram.ext import Application
 
 # Bot-Token
 TOKEN = "7507729922:AAHLtY0h7rYMswxm2OVWnK3W-cq5-A4cXVQ"
 
-# Verbindung zur Datenbank herstellen
+# ✅ Datenbankverbindung testen
 def connect_db():
     try:
         conn = sqlite3.connect('shop_database.db')  # Falls die DB nicht existiert, wird sie erstellt
@@ -20,7 +21,7 @@ def connect_db():
     except Exception as e:
         print(f"⚠ Fehler bei der Datenbankverbindung: {e}")
 
-# Hauptfunktion für den Bot-Start
+# ✅ Hauptfunktion für den Bot-Start
 async def main():
     app = Application.builder().token(TOKEN).build()
     
@@ -29,6 +30,9 @@ async def main():
     
     await app.run_polling()
 
-# Bot starten
+# ✅ Bot starten (Fix für tmux + venv)
 if __name__ == '__main__':
-    asyncio.run(main())
+    nest_asyncio.apply()  # Verhindert Event-Loop-Probleme in tmux
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())
