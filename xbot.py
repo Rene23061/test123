@@ -20,7 +20,7 @@ def register_user_if_not_exists(user_id, chat_id, username, first_name, last_nam
         conn.commit()
     conn.close()
 
-# Holt alle Nutzer der Gruppe
+# Holt ALLE Nutzer der Gruppe
 def get_all_users(chat_id):
     conn = connect_db()
     cursor = conn.cursor()
@@ -83,7 +83,7 @@ async def konto_redirect(update: Update, context: CallbackContext):
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
     await user_account(update, context)
 
-# Zeigt alle Nutzer als Buttons für den Admin
+# **ADMIN: Holt ALLE Nutzer aus der Gruppe und zeigt sie als Buttons**
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
@@ -91,11 +91,16 @@ async def admin_manage(update: Update, context: CallbackContext):
     if len(data) > 1:
         chat_id = data[1]
     else:
-        chat_id = query.message.chat_id  # Falls fehlerhafte Daten kommen
+        chat_id = query.message.chat_id  
 
     print(f"[DEBUG] Admin-Panel geöffnet in Gruppe {chat_id}")
 
     users = get_all_users(chat_id)
+    
+    if not users:
+        await query.message.reply_text("⚠️ Keine Nutzer in der Datenbank gefunden!")
+        return
+
     keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
