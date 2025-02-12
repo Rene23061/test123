@@ -73,7 +73,6 @@ async def user_account(update: Update, context: CallbackContext):
     chat_id = update.message.chat_id  # Richtige Gruppen-ID holen
     private_chat_id = user.id
 
-    # 📌 Nutzer zur Datenbank hinzufügen (falls nicht vorhanden)
     save_user(user.id, chat_id, user.username, user.first_name, user.last_name)
 
     is_admin_user = await is_admin(context, user.id, chat_id)
@@ -90,7 +89,6 @@ async def user_account(update: Update, context: CallbackContext):
     ]
 
     if is_admin_user:
-        print(f"[DEBUG] ✅ Admin-Button für {user.id} sichtbar.")
         keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -107,26 +105,24 @@ async def admin_manage(update: Update, context: CallbackContext):
         return
 
     chat_id = int(data[2])
-    print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
-
     users = get_all_users(chat_id)
 
     if not users:
         await query.message.edit_text("⚠️ Keine Nutzer in der Datenbank gefunden!")
         return
 
-    keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users]
+    keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"user_select_{user[0]}_{chat_id}")] for user in users]
     keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data=f"admin_back_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.message.edit_text("🔹 Wähle einen Nutzer für Guthaben-Verwaltung:", reply_markup=reply_markup)
 
 # 📌 Guthaben-Optionen für den gewählten Nutzer
-async def admin_user_options(update: Update, context: CallbackContext):
+async def user_select(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
 
-    if len(data) < 3 or not data[2].lstrip('-').isdigit():
+    if len(data) < 3 or not data[1].isdigit():
         print(f"[ERROR] Ungültige Nutzer-Callback-Daten: {data}")
         await query.answer("⚠ Fehler: Nutzer-ID konnte nicht erkannt werden.", show_alert=True)
         return
@@ -159,22 +155,7 @@ async def admin_back(update: Update, context: CallbackContext):
     chat_id = int(data[2])
     print(f"[INFO] 🔙 Zurück zum Hauptmenü in Gruppe {chat_id}")
 
-    is_admin_user = await is_admin(context, query.from_user.id, chat_id)
-
-    welcome_text = f"👤 Benutzerkonto für {query.from_user.first_name}\n📌 **Gruppe:** `{chat_id}`\nHier kannst du dein Guthaben verwalten."
-
-    keyboard = [
-        [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{query.from_user.id}")],
-        [InlineKeyboardButton("📜 Meine Käufe", callback_data="show_purchases")],
-        [InlineKeyboardButton("💳 Guthaben aufladen", callback_data="top_up")],
-        [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")]
-    ]
-
-    if is_admin_user:
-        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.message.edit_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+    await admin_manage(update, context)
 
 # 📌 Hauptfunktion zum Starten des Bots
 def main():
@@ -183,7 +164,7 @@ def main():
 
     app.add_handler(CommandHandler("konto", user_account))
     app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage_"))
-    app.add_handler(CallbackQueryHandler(admin_user_options, pattern="^admin_user_"))
+    app.add_handler(CallbackQueryHandler(user_select, pattern="^user_select_"))
     app.add_handler(CallbackQueryHandler(admin_back, pattern="^admin_back_"))
 
     print("✅ Bot erfolgreich gestartet!")
