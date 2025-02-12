@@ -24,9 +24,11 @@ def register_user_if_not_exists(user_id, chat_id, username, first_name, last_nam
 async def is_admin(context: CallbackContext, user_id, chat_id):
     try:
         chat_member = await context.bot.get_chat_member(chat_id, user_id)
+        print(f"Admin-Check für {user_id} → Status: {chat_member.status}")  # Debugging-Log
         return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
-    except Exception:
-        return False  # Falls ein Fehler auftritt, Standard = Kein Admin
+    except Exception as e:
+        print(f"Fehler bei Admin-Check: {e}")
+        return False
 
 # ✅ Benutzerkonto-Menü im Privat-Chat anzeigen (Fix für Admins & Gruppeninhaber)
 async def user_account(update: Update, context: CallbackContext):
@@ -69,7 +71,6 @@ async def konto_redirect(update: Update, context: CallbackContext):
         return  
 
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
-
     await user_account(update, context)
 
 # ✅ Admin-Panel öffnen (Fix für Gruppeninhaber)
@@ -86,12 +87,25 @@ async def admin_menu(update: Update, context: CallbackContext):
 
     await context.bot.send_message(chat_id=user.id, text="⚙️ **Admin-Panel geöffnet!**")
 
+# ✅ Admin-Check testen
+async def check_admin(update: Update, context: CallbackContext):
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    is_admin_user = await is_admin(context, user.id, chat_id)
+
+    if is_admin_user:
+        await update.message.reply_text(f"✅ Du bist Admin oder Gruppeninhaber! (ID: `{user.id}`)", parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"⛔ Du bist KEIN Admin! (ID: `{user.id}`)", parse_mode="Markdown")
+
 # ✅ Hauptfunktion zum Starten des Bots
 def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", konto_redirect))  # `/start` leitet zu `/konto`
     app.add_handler(CommandHandler("konto", konto_redirect))  # `/konto` funktioniert für ALLE (inkl. Admins)
+    app.add_handler(CommandHandler("me", check_admin))  # Admin-Check testen
     app.add_handler(CallbackQueryHandler(admin_menu, pattern="^admin_manage_"))  # Admin-Menü öffnen
 
     print("✅ Bot erfolgreich gestartet!")
