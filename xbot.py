@@ -1,5 +1,5 @@
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler, MessageHandler, filters
 
 # Bot-Token
@@ -20,7 +20,7 @@ def register_user_if_not_exists(user_id, chat_id, username, first_name, last_nam
         conn.commit()
     conn.close()
 
-# Holt ALLE Nutzer der Gruppe
+# Holt alle Nutzer der Gruppe
 def get_all_users(chat_id):
     conn = connect_db()
     cursor = conn.cursor()
@@ -28,6 +28,16 @@ def get_all_users(chat_id):
     users = cursor.fetchall()
     conn.close()
     return users
+
+# Prüft, ob der Nutzer Admin oder Gruppeninhaber ist
+async def is_admin(context: CallbackContext, user_id, chat_id):
+    try:
+        chat_member = await context.bot.get_chat_member(chat_id, user_id)
+        print(f"[DEBUG] Admin-Check für {user_id} in Chat {chat_id} - Status: {chat_member.status}")
+        return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
+    except Exception as e:
+        print(f"[ERROR] Fehler bei Admin-Check für {user_id} in Chat {chat_id}: {e}")
+        return False
 
 # Holt Guthaben eines Nutzers
 def get_user_balance(user_id):
@@ -57,7 +67,9 @@ async def user_account(update: Update, context: CallbackContext):
 
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
-    print(f"[DEBUG] /konto aufgerufen von {user.id} in Chat {chat_id}")
+    is_admin_user = await is_admin(context, user.id, chat_id)
+
+    print(f"[DEBUG] /konto aufgerufen von {user.id} in Chat {chat_id}, Admin: {is_admin_user}")
 
     welcome_text = f"👤 Benutzerkonto für {user.first_name}\n📌 Gruppe: {chat_id}\nHier kannst du dein Guthaben verwalten."
 
@@ -65,9 +77,11 @@ async def user_account(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{user.id}")],
         [InlineKeyboardButton("📜 Meine Käufe", callback_data="show_purchases")],
         [InlineKeyboardButton("💳 Guthaben aufladen", callback_data="top_up")],
-        [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")],
-        [InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")]
+        [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")]
     ]
+
+    if is_admin_user:
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -86,12 +100,7 @@ async def konto_redirect(update: Update, context: CallbackContext):
 # **ADMIN: Holt ALLE Nutzer aus der Gruppe und zeigt sie als Buttons**
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
-    data = query.data.split("_")
-    
-    if len(data) > 1:
-        chat_id = data[1]
-    else:
-        chat_id = query.message.chat_id  
+    chat_id = query.data.split("_")[1]
 
     print(f"[DEBUG] Admin-Panel geöffnet in Gruppe {chat_id}")
 
@@ -128,33 +137,6 @@ async def admin_show_balance(update: Update, context: CallbackContext):
     balance = get_user_balance(user_id)
     await query.message.reply_text(f"💰 Guthaben des Nutzers: {balance} Coins")
 
-# Startet den Prozess zum Guthaben-Ändern
-async def admin_change_balance(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user_id = query.data.split("_")[2]
-    action = query.data.split("_")[1]  # "add" oder "subtract"
-
-    context.user_data["change_balance"] = {"user_id": user_id, "action": action}
-    await query.message.reply_text("🔢 Bitte gib den Betrag ein:")
-
-# Verarbeitet den eingegebenen Betrag
-async def process_balance_change(update: Update, context: CallbackContext):
-    user_id = context.user_data["change_balance"]["user_id"]
-    action = context.user_data["change_balance"]["action"]
-
-    try:
-        amount = int(update.message.text)
-        if action == "subtract":
-            amount = -amount
-
-        update_user_balance(user_id, amount)
-        await update.message.reply_text(f"✅ Guthaben geändert! Neuer Kontostand: {get_user_balance(user_id)} Coins")
-
-    except ValueError:
-        await update.message.reply_text("⚠️ Ungültige Eingabe! Bitte gib eine Zahl ein.")
-
-    context.user_data["change_balance"] = None
-
 # Hauptfunktion zum Starten des Bots
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -164,8 +146,6 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage_"))  
     app.add_handler(CallbackQueryHandler(admin_user_actions, pattern="^admin_user_"))  
     app.add_handler(CallbackQueryHandler(admin_show_balance, pattern="^admin_show_"))  
-    app.add_handler(CallbackQueryHandler(admin_change_balance, pattern="^admin_add_|^admin_subtract_"))  
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_balance_change))
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
