@@ -9,7 +9,7 @@ TOKEN = "7507729922:AAHLtY0h7rYMswxm2OVWnK3W-cq5-A4cXVQ"
 def connect_db():
     return sqlite3.connect('shop_database.db')
 
-# Nutzer registrieren, falls nicht vorhanden (jetzt mit Gruppen-ID)
+# Nutzer registrieren, falls nicht vorhanden (mit Gruppen-ID)
 def register_user_if_not_exists(user_id, chat_id, username, first_name, last_name):
     conn = connect_db()
     cursor = conn.cursor()
@@ -23,55 +23,68 @@ def register_user_if_not_exists(user_id, chat_id, username, first_name, last_nam
 
     conn.close()
 
-# Benutzerkonto-Menü anzeigen (jetzt mit Gruppen-ID)
+# Benutzerkonto-Menü anzeigen (JETZT IM PRIVAT-CHAT)
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id  # Gruppen-ID holen
+    private_chat_id = user.id  # Nutzer-ID für privaten Chat
+
+    # Nutzer registrieren mit Gruppen-ID
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
     # Begrüßungstext
     welcome_text = (
-        f"👤 **Benutzerkonto für {user.first_name}** (Gruppe: {chat_id})\n"
+        f"👤 **Benutzerkonto für {user.first_name}**\n"
         "Hier kannst du dein Guthaben verwalten und deine Käufe einsehen.\n"
+        f"📌 **Du kommst aus der Gruppe:** `{chat_id}`\n"
         "Wähle eine Option:"
     )
 
     # Inline-Keyboard mit Buttons
     keyboard = [
-        [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data="show_balance")],
-        [InlineKeyboardButton("📜 Meine Käufe", callback_data="show_purchases")],
-        [InlineKeyboardButton("💳 Guthaben aufladen", callback_data="top_up")],
-        [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")]
+        [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{chat_id}")],
+        [InlineKeyboardButton("📜 Meine Käufe", callback_data=f"show_purchases_{chat_id}")],
+        [InlineKeyboardButton("💳 Guthaben aufladen", callback_data=f"top_up_{chat_id}")],
+        [InlineKeyboardButton("🛠 Einstellungen", callback_data=f"settings_{chat_id}")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await context.bot.send_message(chat_id=chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+    # Menü als private Nachricht senden
+    await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+
+    # Bestätigung in der Gruppe senden (optional)
+    await update.message.reply_text(f"📩 {user.first_name}, ich habe dir dein Konto-Menü privat gesendet. Schau in deinen Chat mit mir!")
 
 # Button-Klicks verarbeiten
 async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     user = query.from_user
-    chat_id = query.message.chat.id  # Gruppen-ID holen
+    private_chat_id = user.id  # Privat-Chat-ID
+    callback_data = query.data.split("_")
+    action = callback_data[0]
+    chat_id = callback_data[1]  # Gruppen-ID aus Callback
 
     # Nutzer prüfen & registrieren, falls nicht vorhanden
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
-    if query.data == "show_balance":
-        await query.edit_message_text(text=f"📊 Dein aktuelles Guthaben in dieser Gruppe ({chat_id}): 0 Coins (Funktion bald verfügbar!)")
-    elif query.data == "show_purchases":
+    if action == "show_balance":
+        await query.edit_message_text(text=f"📊 Dein aktuelles Guthaben für Gruppe `{chat_id}`: 0 Coins (Funktion bald verfügbar!)")
+    elif action == "show_purchases":
         await query.edit_message_text(text="📜 Deine Käufe sind bald einsehbar!")
-    elif query.data == "top_up":
+    elif action == "top_up":
         await query.edit_message_text(text="💳 Guthaben aufladen wird bald freigeschaltet!")
-    elif query.data == "settings":
+    elif action == "settings":
         await query.edit_message_text(text="🛠 Einstellungen sind bald verfügbar!")
 
-# Start-Befehl für den Bot (nur für Gruppen)
+# Start-Befehl für den Bot (nutzt private Nachricht)
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id  # Gruppen-ID holen
+
+    # Nutzer registrieren
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
 
-    await context.bot.send_message(chat_id=chat_id, text="✅ Nutze /konto, um dein Menü zu öffnen.")
+    await context.bot.send_message(chat_id=user.id, text="✅ Nutze /konto in deiner Gruppe, um dein Menü zu öffnen!")
 
 # Hauptfunktion zum Starten des Bots
 def main():
