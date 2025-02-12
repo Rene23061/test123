@@ -5,6 +5,9 @@ from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQ
 # Bot-Token
 TOKEN = "7507729922:AAHLtY0h7rYMswxm2OVWnK3W-cq5-A4cXVQ"
 
+# ✅ Admin-Liste (Telegram-IDs der Admins)
+ADMIN_LIST = [123456789, 987654321]  # Ersetze mit den echten Admin-IDs!
+
 # Verbindung zur Datenbank herstellen
 def connect_db():
     return sqlite3.connect('shop_database.db')
@@ -32,15 +35,7 @@ def get_user_coins(user_id, chat_id):
     conn.close()
     return result[0] if result else 0
 
-# Guthaben des Nutzers ändern (Admin-Funktion)
-def update_user_coins(user_id, chat_id, amount):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET coins = coins + ? WHERE id = ? AND chat_id = ?", (amount, user_id, chat_id))
-    conn.commit()
-    conn.close()
-
-# Benutzerkonto-Menü anzeigen (IM PRIVAT-CHAT)
+# ✅ Benutzerkonto-Menü jetzt NUR im PRIVAT-CHAT anzeigen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id  # Gruppen-ID holen
@@ -61,17 +56,38 @@ async def user_account(update: Update, context: CallbackContext):
         [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{chat_id}")],
         [InlineKeyboardButton("📜 Meine Käufe", callback_data=f"show_purchases_{chat_id}")],
         [InlineKeyboardButton("💳 Guthaben aufladen", callback_data=f"top_up_{chat_id}")],
-        [InlineKeyboardButton("🛠 Einstellungen", callback_data=f"settings_{chat_id}")],
-        [InlineKeyboardButton("⚙️ Guthaben verwalten (Admin)", callback_data=f"admin_manage_{chat_id}")]
+        [InlineKeyboardButton("🛠 Einstellungen", callback_data=f"settings_{chat_id}")]
+    ]
+
+    # ✅ Falls der Nutzer ein Admin ist, füge den Admin-Button hinzu
+    if user.id in ADMIN_LIST:
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten (Admin)", callback_data=f"admin_manage_{chat_id}")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # ✅ Direkt das Menü im Privat-Chat senden
+    await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+
+# ✅ Admin-Menü für Guthabenverwaltung
+async def admin_menu(update: Update, context: CallbackContext, chat_id):
+    user = update.effective_user
+
+    # 🔹 Prüfen, ob der Nutzer Admin ist
+    if user.id not in ADMIN_LIST:
+        await context.bot.send_message(chat_id=user.id, text="⛔ **Du bist kein Admin!**\nDiese Funktion ist nur für Administratoren verfügbar.")
+        return
+
+    # 🔹 Falls Admin → Admin-Menü anzeigen
+    keyboard = [
+        [InlineKeyboardButton("➕ Guthaben hinzufügen", callback_data=f"add_coins_{chat_id}")],
+        [InlineKeyboardButton("➖ Guthaben abziehen", callback_data=f"remove_coins_{chat_id}")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data=f"show_balance_{chat_id}")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+    await context.bot.send_message(chat_id=user.id, text="⚙️ **Admin-Guthabenverwaltung**\nWähle eine Option:", reply_markup=reply_markup, parse_mode="Markdown")
 
-    # Bestätigung in der Gruppe senden (optional)
-    await update.message.reply_text(f"📩 {user.first_name}, ich habe dir dein Konto-Menü privat gesendet. Schau in deinen Chat mit mir!")
-
-# Button-Klicks verarbeiten
+# ✅ Button-Klicks verarbeiten
 async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     user = query.from_user
@@ -94,26 +110,7 @@ async def button_handler(update: Update, context: CallbackContext):
     elif action == "admin_manage":
         await admin_menu(update, context, chat_id)
 
-# Admin-Menü für Guthabenverwaltung
-async def admin_menu(update: Update, context: CallbackContext, chat_id):
-    user = update.effective_user
-    admin_list = [123456789, 987654321]  # Telegram-IDs der Admins
-
-    if user.id not in admin_list:
-        await context.bot.send_message(chat_id=user.id, text="⛔ Du bist kein Admin und kannst diese Funktion nicht nutzen!")
-        return
-
-    # Admin-Menü anzeigen
-    keyboard = [
-        [InlineKeyboardButton("➕ Guthaben hinzufügen", callback_data=f"add_coins_{chat_id}")],
-        [InlineKeyboardButton("➖ Guthaben abziehen", callback_data=f"remove_coins_{chat_id}")],
-        [InlineKeyboardButton("⬅️ Zurück", callback_data=f"show_balance_{chat_id}")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await context.bot.send_message(chat_id=user.id, text="⚙️ **Admin-Guthabenverwaltung**\nWähle eine Option:", reply_markup=reply_markup, parse_mode="Markdown")
-
-# Start-Befehl für den Bot (nutzt private Nachricht)
+# ✅ Start-Befehl für den Bot (nur im Privat-Chat)
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id  # Gruppen-ID holen
@@ -122,14 +119,14 @@ async def start(update: Update, context: CallbackContext):
 
     await context.bot.send_message(chat_id=user.id, text="✅ Nutze /konto in deiner Gruppe, um dein Menü zu öffnen!")
 
-# Hauptfunktion zum Starten des Bots
+# ✅ Hauptfunktion zum Starten des Bots
 def main():
     # Bot initialisieren
     app = Application.builder().token(TOKEN).build()
 
     # Befehle registrieren
     app.add_handler(CommandHandler("start", start))  # Start-Befehl
-    app.add_handler(CommandHandler("konto", user_account))  # Benutzerkonto-Menü
+    app.add_handler(CommandHandler("konto", user_account))  # Benutzerkonto-Menü (NUR PRIVAT-CHAT)
     app.add_handler(CallbackQueryHandler(button_handler))  # Button-Klicks verarbeiten
 
     # Bot starten
