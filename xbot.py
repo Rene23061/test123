@@ -20,24 +20,6 @@ def register_user_if_not_exists(user_id, chat_id, username, first_name, last_nam
         conn.commit()
     conn.close()
 
-# ✅ Alle Nutzer einer Gruppe abrufen (für Admin-Panel)
-def get_all_users(chat_id):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, first_name FROM users WHERE chat_id = ?", (chat_id,))
-    users = cursor.fetchall()
-    conn.close()
-    return users
-
-# ✅ Guthaben eines Nutzers abrufen
-def get_user_coins(user_id, chat_id):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT coins FROM users WHERE id = ? AND chat_id = ?", (user_id, chat_id))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else 0
-
 # ✅ Prüft, ob der Nutzer Admin oder Gruppeninhaber ist
 async def is_admin(context: CallbackContext, user_id, chat_id):
     try:
@@ -46,7 +28,7 @@ async def is_admin(context: CallbackContext, user_id, chat_id):
     except Exception:
         return False  # Falls ein Fehler auftritt, Standard = Kein Admin
 
-# ✅ Benutzerkonto-Menü im Privat-Chat anzeigen
+# ✅ Benutzerkonto-Menü im Privat-Chat anzeigen (Fix für Admins & Gruppeninhaber)
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -78,7 +60,7 @@ async def user_account(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# ✅ `/konto` wird automatisch zum Privat-Chat geleitet
+# ✅ `/konto` wird automatisch zum Privat-Chat geleitet (Fix für Admins & Gruppeninhaber)
 async def konto_redirect(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -87,9 +69,10 @@ async def konto_redirect(update: Update, context: CallbackContext):
         return  
 
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
+
     await user_account(update, context)
 
-# ✅ Admin-Panel: Nutzerliste anzeigen
+# ✅ Admin-Panel öffnen (Fix für Gruppeninhaber)
 async def admin_menu(update: Update, context: CallbackContext):
     query = update.callback_query
     chat_id = query.message.chat_id
@@ -101,37 +84,15 @@ async def admin_menu(update: Update, context: CallbackContext):
         await context.bot.send_message(chat_id=user.id, text="⛔ **Du bist kein Admin!**")
         return
 
-    users = get_all_users(chat_id)
-    keyboard = [[InlineKeyboardButton(f"{u[1]}", callback_data=f"manage_user_{u[0]}_{chat_id}")] for u in users]
-    keyboard.append([InlineKeyboardButton("⬅️ Zurück", callback_data=f"show_balance_{chat_id}")])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.message.edit_text(text="⚙️ **Wähle einen Nutzer zur Guthabenverwaltung:**", reply_markup=reply_markup, parse_mode="Markdown")
-
-# ✅ Nutzer-Verwaltungsmenü anzeigen
-async def manage_user(update: Update, context: CallbackContext):
-    query = update.callback_query
-    data = query.data.split("_")
-    user_id, chat_id = data[2], data[3]
-
-    keyboard = [
-        [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"check_balance_{user_id}_{chat_id}")],
-        [InlineKeyboardButton("➕ Guthaben hinzufügen", callback_data=f"add_coins_{user_id}_{chat_id}")],
-        [InlineKeyboardButton("➖ Guthaben abziehen", callback_data=f"remove_coins_{user_id}_{chat_id}")],
-        [InlineKeyboardButton("⬅️ Zurück", callback_data=f"admin_manage_{chat_id}")]
-    ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.message.edit_text(text="⚙️ **Guthaben-Optionen für diesen Nutzer:**", reply_markup=reply_markup, parse_mode="Markdown")
+    await context.bot.send_message(chat_id=user.id, text="⚙️ **Admin-Panel geöffnet!**")
 
 # ✅ Hauptfunktion zum Starten des Bots
 def main():
     app = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", konto_redirect))
-    app.add_handler(CommandHandler("konto", konto_redirect))
-    app.add_handler(CallbackQueryHandler(admin_menu, pattern="^admin_manage_"))
-    app.add_handler(CallbackQueryHandler(manage_user, pattern="^manage_user_"))
+    app.add_handler(CommandHandler("start", konto_redirect))  # `/start` leitet zu `/konto`
+    app.add_handler(CommandHandler("konto", konto_redirect))  # `/konto` funktioniert für ALLE (inkl. Admins)
+    app.add_handler(CallbackQueryHandler(admin_menu, pattern="^admin_manage_"))  # Admin-Menü öffnen
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
