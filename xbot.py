@@ -27,7 +27,7 @@ def initialize_database():
     conn.close()
     print("✅ Datenbank überprüft & initialisiert!")
 
-# 📌 Registriert Nutzer, falls sie fehlen
+# 📌 Nutzer registrieren, falls nicht vorhanden
 def register_user_if_not_exists(user_id, chat_id, username, first_name, last_name):
     conn = connect_db()
     cursor = conn.cursor()
@@ -40,28 +40,15 @@ def register_user_if_not_exists(user_id, chat_id, username, first_name, last_nam
         print(f"✅ Neuer Nutzer gespeichert: {user_id} in Gruppe {chat_id}")
     conn.close()
 
-# 📌 Holt ALLE Nutzer aus der Gruppe & registriert fehlende Nutzer
-async def get_all_users_and_register(context: CallbackContext, chat_id):
-    try:
-        chat_members = await context.bot.get_chat(chat_id)
-        conn = connect_db()
-        cursor = conn.cursor()
-
-        # ALLE Mitglieder holen und registrieren
-        async for member in context.bot.get_chat_administrators(chat_id):
-            user = member.user
-            cursor.execute("SELECT id FROM users WHERE id = ? AND chat_id = ?", (user.id, chat_id))
-            if cursor.fetchone() is None:
-                cursor.execute("INSERT INTO users (id, chat_id, username, first_name, last_name, coins) VALUES (?, ?, ?, ?, ?, ?)",
-                               (user.id, chat_id, user.username, user.first_name, user.last_name, 0))
-                print(f"✅ Neuer Nutzer registriert: {user.id} ({user.first_name}) in Gruppe {chat_id}")
-
-        conn.commit()
-        conn.close()
-        print(f"✅ Alle Nutzer für Gruppe {chat_id} registriert.")
-
-    except Exception as e:
-        print(f"[ERROR] Fehler beim Abrufen der Nutzerliste: {e}")
+# 📌 Holt ALLE Nutzer aus der Datenbank für eine bestimmte Gruppe (chat_id)
+def get_all_users(chat_id):
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, first_name FROM users WHERE chat_id = ?", (chat_id,))
+    users = cursor.fetchall()
+    conn.close()
+    print(f"🔍 {len(users)} Nutzer in Gruppe {chat_id} gefunden")
+    return users
 
 # 📌 Admin-Check (Sichtbarkeit von Admin-Menüs)
 async def is_admin(context: CallbackContext, user_id, chat_id):
@@ -104,20 +91,14 @@ async def user_account(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Admin-Panel: Holt ALLE Nutzer & registriert fehlende Nutzer
+# 📌 Admin-Panel: Holt ALLE Nutzer für die aktuelle Gruppe (chat_id)
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     chat_id = query.data.split("_")[1]
 
     print(f"[DEBUG] Admin-Panel geöffnet in Gruppe {chat_id}")
 
-    await get_all_users_and_register(context, chat_id)
-
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, username, first_name FROM users WHERE chat_id = ?", (chat_id,))
-    users = cursor.fetchall()
-    conn.close()
+    users = get_all_users(chat_id)  # Holt alle Nutzer mit dieser Gruppen-ID
 
     if not users:
         await query.message.reply_text("⚠️ Keine Nutzer in der Datenbank gefunden!")
