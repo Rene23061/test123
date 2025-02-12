@@ -100,7 +100,13 @@ async def user_account(update: Update, context: CallbackContext):
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
-    chat_id = int(data[1])  # Holt Gruppen-ID aus Callback-Daten
+
+    if len(data) > 1 and data[1].lstrip('-').isdigit():
+        chat_id = int(data[1])  # Holt Gruppen-ID aus Callback-Daten
+    else:
+        print(f"[ERROR] Ungültige Callback-Daten erhalten: {data}")
+        await query.answer("⚠ Fehler: Gruppen-ID konnte nicht erkannt werden.", show_alert=True)
+        return
 
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
