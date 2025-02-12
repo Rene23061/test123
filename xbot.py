@@ -27,20 +27,27 @@ def initialize_database():
     conn.close()
     print("✅ Datenbank überprüft & initialisiert!")
 
-# 📌 Nutzer registrieren, falls nicht vorhanden
-def register_user_if_not_exists(user_id, chat_id, username, first_name, last_name):
+# 📌 Nutzer in der Datenbank speichern (mit Gruppen-ID)
+def save_user(user_id, chat_id, username, first_name, last_name):
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE id = ? AND chat_id = ?", (user_id, chat_id))
 
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO users (id, chat_id, username, first_name, last_name, coins) VALUES (?, ?, ?, ?, ?, ?)",
-                       (user_id, chat_id, username, first_name, last_name, 0))
+    cursor.execute("SELECT * FROM users WHERE id = ? AND chat_id = ?", (user_id, chat_id))
+    existing_user = cursor.fetchone()
+
+    if not existing_user:
+        cursor.execute(
+            "INSERT INTO users (id, chat_id, username, first_name, last_name, coins) VALUES (?, ?, ?, ?, ?, 0)",
+            (user_id, chat_id, username, first_name, last_name)
+        )
         conn.commit()
-        print(f"✅ Neuer Nutzer gespeichert: {user_id} in Gruppe {chat_id}")
+        print(f"✅ Neuer Nutzer {first_name} ({user_id}) in Gruppe {chat_id} gespeichert!")
+    else:
+        print(f"ℹ️ Nutzer {first_name} ({user_id}) in Gruppe {chat_id} bereits vorhanden.")
+
     conn.close()
 
-# 📌 Holt ALLE Nutzer aus der Datenbank für eine bestimmte Gruppe (chat_id)
+# 📌 Holt ALLE Nutzer aus einer bestimmten Gruppe
 def get_all_users(chat_id):
     conn = connect_db()
     cursor = conn.cursor()
@@ -63,13 +70,11 @@ async def is_admin(context: CallbackContext, user_id, chat_id):
 # 📌 Benutzerkonto-Menü im Privat-Chat anzeigen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.message.chat_id
+    chat_id = update.message.chat_id  # Richtige Gruppen-ID holen
     private_chat_id = user.id
 
-    if user.is_bot:
-        return  
-
-    register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
+    # 📌 Nutzer zur Datenbank hinzufügen (falls nicht vorhanden)
+    save_user(user.id, chat_id, user.username, user.first_name, user.last_name)
 
     is_admin_user = await is_admin(context, user.id, chat_id)
 
@@ -84,53 +89,59 @@ async def user_account(update: Update, context: CallbackContext):
         [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")]
     ]
 
-    # ✅ Admin-Button nur für Admins sichtbar
     if is_admin_user:
         print(f"[DEBUG] ✅ Admin-Button für {user.id} sichtbar.")
         keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
-    else:
-        print(f"[DEBUG] ❌ Admin-Button für {user.id} NICHT sichtbar.")
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Admin-Panel ersetzt das Menü und zeigt die Nutzer der Gruppe an
+# 📌 Admin-Panel zeigt die Nutzer der richtigen Gruppe an
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
-
-    user_id = query.from_user.id
-
-    # 📌 Holt die Gruppen-ID **direkt aus der Datenbank**
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT chat_id FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-
-    if row:
-        chat_id = row[0]
-        print(f"[INFO] ℹ️ Gruppen-ID aus Datenbank geladen: {chat_id}")
-    else:
-        print("[ERROR] ❌ Konnte Gruppen-ID nicht aus Datenbank laden!")
-        await query.message.edit_text("⚠️ Fehler: Gruppen-ID konnte nicht erkannt werden!")
-        return
+    chat_id = int(data[1])  # Holt Gruppen-ID aus Callback-Daten
 
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
-    users = get_all_users(chat_id)  # Holt alle Nutzer mit dieser Gruppen-ID
+    users = get_all_users(chat_id)
 
     if not users:
         await query.message.edit_text("⚠️ Keine Nutzer in der Datenbank gefunden!")
         return
 
-    # 📌 Hier ersetzen wir das Menü durch die Nutzerliste
     keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users]
     keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data=f"admin_back_{chat_id}")])  # Zurück-Button
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.message.edit_text("🔹 Wähle einen Nutzer für Guthaben-Verwaltung:", reply_markup=reply_markup)
+
+# 📌 Zurück zum Hauptmenü für Admins
+async def admin_back(update: Update, context: CallbackContext):
+    query = update.callback_query
+    data = query.data.split("_")
+    chat_id = int(data[1])
+
+    print(f"[INFO] 🔙 Zurück zum Hauptmenü in Gruppe {chat_id}")
+
+    is_admin_user = await is_admin(context, query.from_user.id, chat_id)
+
+    welcome_text = f"👤 Benutzerkonto für {query.from_user.first_name}\n📌 **Gruppe:** `{chat_id}`\nHier kannst du dein Guthaben verwalten."
+
+    keyboard = [
+        [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{query.from_user.id}")],
+        [InlineKeyboardButton("📜 Meine Käufe", callback_data="show_purchases")],
+        [InlineKeyboardButton("💳 Guthaben aufladen", callback_data="top_up")],
+        [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")]
+    ]
+
+    if is_admin_user:
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.message.edit_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
 # 📌 Hauptfunktion zum Starten des Bots
 def main():
@@ -141,6 +152,7 @@ def main():
     app.add_handler(CommandHandler("start", user_account))  
     app.add_handler(CommandHandler("konto", user_account))  
     app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage_"))  
+    app.add_handler(CallbackQueryHandler(admin_back, pattern="^admin_back_"))  
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
