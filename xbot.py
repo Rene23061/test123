@@ -63,7 +63,7 @@ async def is_admin(context: CallbackContext, user_id, chat_id):
 # 📌 Benutzerkonto-Menü im Privat-Chat anzeigen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.effective_chat.id
+    chat_id = update.message.chat_id
     private_chat_id = user.id
 
     if user.is_bot:
@@ -87,7 +87,7 @@ async def user_account(update: Update, context: CallbackContext):
     # Admin-Button NUR für Admins!
     if is_admin_user:
         print(f"[DEBUG] ✅ Admin-Button für {user.id} sichtbar.")
-        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage")])
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
     else:
         print(f"[DEBUG] ❌ Admin-Button für {user.id} NICHT sichtbar.")
 
@@ -97,7 +97,7 @@ async def user_account(update: Update, context: CallbackContext):
 # 📌 Admin-Panel: Holt ALLE Nutzer für die aktuelle Gruppe (chat_id)
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
-    chat_id = query.message.chat_id  # Holt die aktuelle Gruppen-ID korrekt
+    chat_id = int(query.data.split("_")[1])  # Richtige Gruppen-ID holen
 
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
@@ -120,7 +120,7 @@ def main():
 
     app.add_handler(CommandHandler("start", user_account))  
     app.add_handler(CommandHandler("konto", user_account))  
-    app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage"))  
+    app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage_"))  
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
