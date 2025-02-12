@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMem
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler, MessageHandler, filters
 
 # Bot-Token
-TOKEN = "DEIN_BOT_TOKEN_HIER"
+TOKEN = "7507729922:AAHLtY0h7rYMswxm2OVWnK3W-cq5-A4cXVQ"
 
 # 📌 Verbindung zur Datenbank herstellen
 def connect_db():
@@ -27,7 +27,7 @@ def initialize_database():
     conn.close()
     print("✅ Datenbank überprüft & initialisiert!")
 
-# 📌 Nutzer in der Datenbank speichern
+# 📌 Nutzer in der Datenbank speichern (mit Gruppen-ID)
 def save_user(user_id, chat_id, username, first_name, last_name):
     conn = connect_db()
     cursor = conn.cursor()
@@ -47,34 +47,38 @@ def save_user(user_id, chat_id, username, first_name, last_name):
 
     conn.close()
 
-# 📌 Holt Nutzer aus einer bestimmten Gruppe mit Pagination
-def get_users_paginated(chat_id, page=0, page_size=20):
+# 📌 Holt ALLE Nutzer aus einer bestimmten Gruppe
+def get_all_users(chat_id):
     conn = connect_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, first_name FROM users WHERE chat_id = ? LIMIT ? OFFSET ?", 
-                   (chat_id, page_size, page * page_size))
+    cursor.execute("SELECT id, username, first_name FROM users WHERE chat_id = ?", (chat_id,))
     users = cursor.fetchall()
     conn.close()
+    print(f"🔍 {len(users)} Nutzer in Gruppe {chat_id} gefunden")
     return users
 
-# 📌 Admin-Check
+# 📌 Admin-Check (Sichtbarkeit von Admin-Menüs)
 async def is_admin(context: CallbackContext, user_id, chat_id):
     try:
         chat_member = await context.bot.get_chat_member(chat_id, user_id)
+        print(f"[DEBUG] Admin-Check für {user_id} in Chat {chat_id} - Status: {chat_member.status}")
         return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
     except Exception as e:
         print(f"[ERROR] Fehler bei Admin-Check für {user_id} in Chat {chat_id}: {e}")
         return False
 
-# 📌 Benutzerkonto-Menü
+# 📌 Benutzerkonto-Menü im Privat-Chat anzeigen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.message.chat_id
+    chat_id = update.message.chat_id  # Richtige Gruppen-ID holen
     private_chat_id = user.id
 
+    # 📌 Nutzer zur Datenbank hinzufügen (falls nicht vorhanden)
     save_user(user.id, chat_id, user.username, user.first_name, user.last_name)
 
     is_admin_user = await is_admin(context, user.id, chat_id)
+
+    print(f"[DEBUG] /konto aufgerufen von {user.id} in Chat {chat_id}, Admin: {is_admin_user}")
 
     welcome_text = f"👤 Benutzerkonto für {user.first_name}\n📌 **Gruppe:** `{chat_id}`\nHier kannst du dein Guthaben verwalten."
 
@@ -86,99 +90,79 @@ async def user_account(update: Update, context: CallbackContext):
     ]
 
     if is_admin_user:
-        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}_0")])
+        print(f"[DEBUG] ✅ Admin-Button für {user.id} sichtbar.")
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Admin-Panel mit Pagination
+# 📌 Admin-Panel zeigt die Nutzer der richtigen Gruppe an
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
 
-    if len(data) < 4:
-        await query.answer("⚠ Fehler: Ungültige Daten!", show_alert=True)
+    if len(data) < 3 or not data[2].lstrip('-').isdigit():
+        print(f"[ERROR] Ungültige Callback-Daten erhalten: {data}")
+        await query.answer("⚠ Fehler: Gruppen-ID konnte nicht erkannt werden.", show_alert=True)
         return
 
-    chat_id = int(data[2])
-    page = int(data[3])
+    chat_id = int(data[2])  
+    print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
-    users = get_users_paginated(chat_id, page)
+    users = get_all_users(chat_id)
 
     if not users:
-        await query.answer("⚠ Keine Nutzer gefunden!", show_alert=True)
+        await query.message.edit_text("⚠️ Keine Nutzer in der Datenbank gefunden!")
         return
 
-    keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users]
-
-    if page > 0:
-        keyboard.append([InlineKeyboardButton("⬅️ Zurück", callback_data=f"admin_manage_{chat_id}_{page - 1}")])
-    if len(users) == 20:
-        keyboard.append([InlineKeyboardButton("➡️ Weiter", callback_data=f"admin_manage_{chat_id}_{page + 1}")])
-
-    keyboard.append([InlineKeyboardButton("🔍 Nutzer suchen", callback_data=f"admin_search_{chat_id}")])
+    keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users[:20]]
     keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data=f"admin_back_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.message.edit_text("🔹 Wähle einen Nutzer:", reply_markup=reply_markup)
+    await query.message.edit_text("🔹 Wähle einen Nutzer für Guthaben-Verwaltung:", reply_markup=reply_markup)
 
-# 📌 Nutzer-Suche
-async def admin_search(update: Update, context: CallbackContext):
-    query = update.callback_query
-    chat_id = query.data.split("_")[2]
-    
-    await query.message.edit_text("🔍 Bitte gib den Namen oder die ID des Nutzers ein:")
-    context.user_data["search_chat_id"] = chat_id  # Speichert die Gruppen-ID für spätere Suche
-
-# 📌 Suchergebnis anzeigen
-async def process_search(update: Update, context: CallbackContext):
-    chat_id = context.user_data.get("search_chat_id")
-    search_query = update.message.text
-
-    if not chat_id:
-        await update.message.reply_text("⚠ Kein Gruppen-Kontext gefunden!")
-        return
-
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, username, first_name FROM users WHERE chat_id = ? AND (username LIKE ? OR first_name LIKE ? OR id LIKE ?)", 
-                   (chat_id, f"%{search_query}%", f"%{search_query}%", f"%{search_query}%"))
-    users = cursor.fetchall()
-    conn.close()
-
-    if not users:
-        await update.message.reply_text("⚠ Kein Nutzer gefunden!")
-        return
-
-    keyboard = [[InlineKeyboardButton(f"{user[1] or user[2]}", callback_data=f"admin_user_{user[0]}_{chat_id}")] for user in users]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text("🔹 Wähle einen Nutzer:", reply_markup=reply_markup)
-
-# 📌 Zurück zum Hauptmenü
+# 📌 Zurück zum Hauptmenü für Admins
 async def admin_back(update: Update, context: CallbackContext):
     query = update.callback_query
-    chat_id = int(query.data.split("_")[2])
+    data = query.data.split("_")
 
-    welcome_text = f"👤 Benutzerkonto\n📌 **Gruppe:** `{chat_id}`\nHier kannst du dein Guthaben verwalten."
+    if len(data) < 3 or not data[2].lstrip('-').isdigit():
+        print(f"[ERROR] Ungültige Zurück-Callback-Daten: {data}")
+        await query.answer("⚠ Fehler: Gruppen-ID nicht erkannt.", show_alert=True)
+        return
 
-    keyboard = [[InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}_0")]]
+    chat_id = int(data[2])
+    print(f"[INFO] 🔙 Zurück zum Hauptmenü in Gruppe {chat_id}")
+
+    is_admin_user = await is_admin(context, query.from_user.id, chat_id)
+
+    welcome_text = f"👤 Benutzerkonto für {query.from_user.first_name}\n📌 **Gruppe:** `{chat_id}`\nHier kannst du dein Guthaben verwalten."
+
+    keyboard = [
+        [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{query.from_user.id}")],
+        [InlineKeyboardButton("📜 Meine Käufe", callback_data="show_purchases")],
+        [InlineKeyboardButton("💳 Guthaben aufladen", callback_data="top_up")],
+        [InlineKeyboardButton("🛠 Einstellungen", callback_data="settings")]
+    ]
+
+    if is_admin_user:
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.message.edit_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Bot starten
+# 📌 Hauptfunktion zum Starten des Bots
 def main():
-    initialize_database()
+    initialize_database()  
 
     app = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("konto", user_account))
-    app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage_"))
-    app.add_handler(CallbackQueryHandler(admin_search, pattern="^admin_search_"))
-    app.add_handler(CallbackQueryHandler(admin_back, pattern="^admin_back_"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_search))
+    app.add_handler(CommandHandler("start", user_account))  
+    app.add_handler(CommandHandler("konto", user_account))  
+    app.add_handler(CallbackQueryHandler(admin_manage, pattern="^admin_manage_"))  
+    app.add_handler(CallbackQueryHandler(admin_back, pattern="^admin_back_"))  
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
