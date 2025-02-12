@@ -94,7 +94,7 @@ async def user_account(update: Update, context: CallbackContext):
 # 📌 Admin-Panel: Holt ALLE Nutzer für die aktuelle Gruppe (chat_id)
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
-    chat_id = query.data.split("_")[1]
+    chat_id = query.message.chat_id  # Holt die aktuelle Gruppen-ID korrekt
 
     print(f"[DEBUG] Admin-Panel geöffnet in Gruppe {chat_id}")
 
