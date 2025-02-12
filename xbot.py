@@ -20,7 +20,7 @@ def register_user_if_not_exists(user_id, chat_id, username, first_name, last_nam
         conn.commit()
     conn.close()
 
-# Prüft, ob der Nutzer Admin oder Gruppeninhaber ist
+# Prüft, ob der Nutzer Admin oder Gruppeninhaber ist (Fix: Immer richtige Gruppen-ID verwenden)
 async def is_admin(context: CallbackContext, user_id, chat_id):
     try:
         chat_member = await context.bot.get_chat_member(chat_id, user_id)
@@ -33,7 +33,7 @@ async def is_admin(context: CallbackContext, user_id, chat_id):
 # Benutzerkonto-Menü im Privat-Chat anzeigen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.effective_chat.id
+    chat_id = update.effective_chat.id  # Speichert die Gruppen-ID
     private_chat_id = user.id
 
     print(f"[DEBUG] /konto von {user.id} in Chat {chat_id}")
@@ -62,7 +62,7 @@ async def user_account(update: Update, context: CallbackContext):
     ]
 
     if is_admin_user:
-        keyboard.append([InlineKeyboardButton(f"⚙️ Guthaben verwalten ({chat_id})", callback_data=f"admin_manage_{chat_id}")])
+        keyboard.append([InlineKeyboardButton("⚙️ Guthaben verwalten", callback_data=f"admin_manage_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -70,7 +70,7 @@ async def user_account(update: Update, context: CallbackContext):
 # /konto wird automatisch zum Privat-Chat geleitet
 async def konto_redirect(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.effective_chat.id
+    chat_id = update.effective_chat.id  # Speichert die Gruppen-ID
 
     print(f"[DEBUG] /konto aufgerufen von {user.id} in Chat {chat_id}")
 
@@ -81,16 +81,15 @@ async def konto_redirect(update: Update, context: CallbackContext):
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
     await user_account(update, context)
 
-# Admin-Panel öffnen (Fix für Chat-ID Fehler)
+# Admin-Panel öffnen (Fix: Korrekte Gruppen-ID übergeben)
 async def admin_menu(update: Update, context: CallbackContext):
     query = update.callback_query
     user = query.from_user
 
-    # Sicherstellen, dass die Gruppen-ID richtig gelesen wird
+    # Gruppen-ID aus Callback-Data holen, damit der Admin-Check die richtige Gruppe verwendet
     data = query.data.split("_")
-    
     try:
-        chat_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else query.message.chat_id
+        chat_id = int(data[1]) if len(data) > 1 and data[1].startswith("-") else query.message.chat_id
     except Exception:
         chat_id = query.message.chat_id
 
