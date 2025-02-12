@@ -60,7 +60,7 @@ async def is_admin(context: CallbackContext, user_id, chat_id):
         print(f"[ERROR] Fehler bei Admin-Check für {user_id} in Chat {chat_id}: {e}")
         return False
 
-# 📌 Benutzerkonto-Menü im Privat-Chat anzeigen
+# 📌 Benutzerkonto-Menü im Privat-Chat anzeigen (richtige Gruppen-ID verwenden!)
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.message.chat_id
@@ -75,7 +75,7 @@ async def user_account(update: Update, context: CallbackContext):
 
     print(f"[DEBUG] /konto aufgerufen von {user.id} in Chat {chat_id}, Admin: {is_admin_user}")
 
-    welcome_text = f"👤 Benutzerkonto für {user.first_name}\n📌 Gruppe: {chat_id}\nHier kannst du dein Guthaben verwalten."
+    welcome_text = f"👤 Benutzerkonto für {user.first_name}\n📌 **Gruppe:** `{chat_id}`\nHier kannst du dein Guthaben verwalten."
 
     keyboard = [
         [InlineKeyboardButton("📊 Guthaben anzeigen", callback_data=f"show_balance_{user.id}")],
@@ -94,10 +94,10 @@ async def user_account(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Admin-Panel: Holt ALLE Nutzer für die aktuelle Gruppe (chat_id)
+# 📌 Admin-Panel: Holt ALLE Nutzer für die Gruppe aus dem Willkommens-Text
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
-    chat_id = query.message.chat_id  # Holt die aktuelle Gruppen-ID korrekt
+    chat_id = int(query.data.split("_")[1])  # Holt die Gruppen-ID aus dem Willkommens-Text!
 
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
