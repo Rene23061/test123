@@ -1,5 +1,5 @@
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMemberStatus
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
 
 # Bot-Token
@@ -33,8 +33,11 @@ def get_user_coins(user_id, chat_id):
 
 # ✅ Prüft, ob der Nutzer Admin oder Gruppeninhaber ist
 async def is_admin(update: Update, context: CallbackContext, user_id, chat_id):
-    chat_member = await context.bot.get_chat_member(chat_id, user_id)
-    return chat_member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
+    try:
+        chat_member = await context.bot.get_chat_member(chat_id, user_id)
+        return chat_member.status in ["administrator", "creator"]  # Admin oder Gruppeninhaber
+    except Exception:
+        return False  # Falls ein Fehler auftritt, Standard = Kein Admin
 
 # ✅ Benutzerkonto-Menü jetzt **automatisch** im Privat-Chat öffnen
 async def user_account(update: Update, context: CallbackContext):
