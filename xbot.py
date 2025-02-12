@@ -70,10 +70,9 @@ async def is_admin(context: CallbackContext, user_id, chat_id):
 # 📌 Benutzerkonto-Menü im Privat-Chat anzeigen
 async def user_account(update: Update, context: CallbackContext):
     user = update.effective_user
-    chat_id = update.message.chat_id  # Richtige Gruppen-ID holen
+    chat_id = update.message.chat_id  
     private_chat_id = user.id
 
-    # 📌 Nutzer zur Datenbank hinzufügen (falls nicht vorhanden)
     save_user(user.id, chat_id, user.username, user.first_name, user.last_name)
 
     is_admin_user = await is_admin(context, user.id, chat_id)
@@ -96,7 +95,7 @@ async def user_account(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=private_chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
-# 📌 Admin-Panel zeigt die Nutzer der richtigen Gruppe an
+# 📌 Admin-Panel bleibt im selben Menü und zeigt Nutzerliste an
 async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
@@ -120,7 +119,7 @@ async def admin_manage(update: Update, context: CallbackContext):
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.message.edit_text("🔹 Wähle einen Nutzer für Guthaben-Verwaltung:", reply_markup=reply_markup)
+    await query.message.edit_text("🔹 Wähle einen Benutzer für die Guthaben-Verwaltung:", reply_markup=reply_markup)
 
 # 📌 Zurück zum Hauptmenü für Admins
 async def admin_back(update: Update, context: CallbackContext):
