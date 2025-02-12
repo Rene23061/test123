@@ -1,5 +1,5 @@
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
 
 # Bot-Token
@@ -39,12 +39,12 @@ def get_user_coins(user_id, chat_id):
     return result[0] if result else 0
 
 # ✅ Prüft, ob der Nutzer Admin oder Gruppeninhaber ist
-async def is_admin(update: Update, context: CallbackContext, user_id, chat_id):
+async def is_admin(context: CallbackContext, user_id, chat_id):
     try:
         chat_member = await context.bot.get_chat_member(chat_id, user_id)
-        return chat_member.status in ["administrator", "creator"]
+        return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
     except Exception:
-        return False
+        return False  # Falls ein Fehler auftritt, Standard = Kein Admin
 
 # ✅ Benutzerkonto-Menü im Privat-Chat anzeigen
 async def user_account(update: Update, context: CallbackContext):
@@ -56,7 +56,7 @@ async def user_account(update: Update, context: CallbackContext):
         return  
 
     register_user_if_not_exists(user.id, chat_id, user.username, user.first_name, user.last_name)
-    is_admin_user = await is_admin(update, context, user.id, chat_id)
+    is_admin_user = await is_admin(context, user.id, chat_id)
 
     welcome_text = (
         f"👤 **Benutzerkonto für {user.first_name}**\n"
@@ -90,9 +90,12 @@ async def konto_redirect(update: Update, context: CallbackContext):
     await user_account(update, context)
 
 # ✅ Admin-Panel: Nutzerliste anzeigen
-async def admin_menu(update: Update, context: CallbackContext, chat_id):
-    user = update.effective_user
-    is_admin_user = await is_admin(update, context, user.id, chat_id)
+async def admin_menu(update: Update, context: CallbackContext):
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    user = query.from_user
+
+    is_admin_user = await is_admin(context, user.id, chat_id)
 
     if not is_admin_user:
         await context.bot.send_message(chat_id=user.id, text="⛔ **Du bist kein Admin!**")
@@ -103,7 +106,7 @@ async def admin_menu(update: Update, context: CallbackContext, chat_id):
     keyboard.append([InlineKeyboardButton("⬅️ Zurück", callback_data=f"show_balance_{chat_id}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(chat_id=user.id, text="⚙️ **Wähle einen Nutzer zur Guthabenverwaltung:**", reply_markup=reply_markup, parse_mode="Markdown")
+    await query.message.edit_text(text="⚙️ **Wähle einen Nutzer zur Guthabenverwaltung:**", reply_markup=reply_markup, parse_mode="Markdown")
 
 # ✅ Nutzer-Verwaltungsmenü anzeigen
 async def manage_user(update: Update, context: CallbackContext):
@@ -125,10 +128,10 @@ async def manage_user(update: Update, context: CallbackContext):
 def main():
     app = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", konto_redirect))
     app.add_handler(CommandHandler("konto", konto_redirect))
-    app.add_handler(CallbackQueryHandler(manage_user, pattern="^manage_user_"))
     app.add_handler(CallbackQueryHandler(admin_menu, pattern="^admin_manage_"))
+    app.add_handler(CallbackQueryHandler(manage_user, pattern="^manage_user_"))
 
     print("✅ Bot erfolgreich gestartet!")
     app.run_polling()
