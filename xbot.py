@@ -101,13 +101,13 @@ async def admin_manage(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
 
-    if len(data) > 1 and data[1].lstrip('-').isdigit():
-        chat_id = int(data[1])  # Holt Gruppen-ID aus Callback-Daten
-    else:
+    # 🚨 Sicherstellen, dass die Callback-Daten korrekt sind
+    if len(data) < 3 or not data[2].lstrip('-').isdigit():
         print(f"[ERROR] Ungültige Callback-Daten erhalten: {data}")
         await query.answer("⚠ Fehler: Gruppen-ID konnte nicht erkannt werden.", show_alert=True)
         return
 
+    chat_id = int(data[2])  # Holt Gruppen-ID aus Callback-Daten
     print(f"[DEBUG] 🔍 Admin-Panel geöffnet für Gruppe {chat_id}")
 
     users = get_all_users(chat_id)
@@ -127,8 +127,13 @@ async def admin_manage(update: Update, context: CallbackContext):
 async def admin_back(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data.split("_")
-    chat_id = int(data[1])
 
+    if len(data) < 3 or not data[2].lstrip('-').isdigit():
+        print(f"[ERROR] Ungültige Zurück-Callback-Daten: {data}")
+        await query.answer("⚠ Fehler: Gruppen-ID nicht erkannt.", show_alert=True)
+        return
+
+    chat_id = int(data[2])
     print(f"[INFO] 🔙 Zurück zum Hauptmenü in Gruppe {chat_id}")
 
     is_admin_user = await is_admin(context, query.from_user.id, chat_id)
