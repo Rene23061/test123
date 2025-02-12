@@ -63,17 +63,16 @@ async def button_handler(update: Update, context: CallbackContext):
     elif query.data == "settings":
         await query.edit_message_text(text="🛠 Einstellungen sind bald verfügbar!")
 
-# Start-Befehl für den Bot (öffnet Menü in der Gruppe, wenn Button gedrückt wird)
+# Start-Befehl für den Bot (prüft, ob aus einer Gruppe oder privat)
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = update.effective_chat.id
     register_user_if_not_exists(user.id, user.username, user.first_name, user.last_name)
 
-    # Prüfen, ob "groupmenu" als Argument übergeben wurde (durch den Button-Klick)
-    if context.args and context.args[0] == "groupmenu":
-        await user_account(update, context)  # Direkt das Menü in die Gruppe senden
+    if update.effective_chat.type in ["group", "supergroup"]:
+        await context.bot.send_message(chat_id=chat_id, text="✅ Nutze /konto, um dein Menü zu öffnen.")
     else:
-        await context.bot.send_message(chat_id=chat_id, text="✅ Willkommen! Nutze /konto in der Gruppe, um dein Menü zu öffnen.")
+        await context.bot.send_message(chat_id=chat_id, text="✅ Nutze diesen Bot in einer Gruppe.")
 
 # Hauptfunktion zum Starten des Bots
 def main():
@@ -81,7 +80,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
 
     # Befehle registrieren
-    app.add_handler(CommandHandler("start", start))  # Start-Befehl registrieren
+    app.add_handler(CommandHandler("start", start))  # Start-Befehl
     app.add_handler(CommandHandler("konto", user_account))  # Benutzerkonto-Menü
     app.add_handler(CallbackQueryHandler(button_handler))  # Button-Klicks verarbeiten
 
