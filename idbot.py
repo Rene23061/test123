@@ -1,3 +1,5 @@
+
+
 import re
 import sqlite3
 from telegram import Update
@@ -11,23 +13,32 @@ TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
-    conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
+    conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
+
+    # Tabelle für die gruppenbasierte Whitelist erstellen
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS allowed_groups (
-            chat_id INTEGER PRIMARY KEY,
-            allow_sbot INTEGER DEFAULT 0,
-            allow_cpbot INTEGER DEFAULT 0
+        CREATE TABLE IF NOT EXISTS whitelist (
+            chat_id INTEGER,
+            link TEXT,
+            PRIMARY KEY (chat_id, link)
         )
     """)
+
+    # Tabelle für die erlaubten Gruppen erstellen
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS allowed_groups (
+            chat_id INTEGER PRIMARY KEY
+        )
+    """)
+
     conn.commit()
+    print("✅ Datenbank erfolgreich initialisiert.")
     return conn, cursor
 
-conn, cursor = init_db()
-
-# --- Prüfen, ob die Gruppe für `cpbot` erlaubt ist ---
-def is_group_allowed(chat_id):
-    cursor.execute("SELECT allow_cpbot FROM allowed_groups WHERE chat_id = ? AND allow_cpbot = 1", (chat_id,))
+# --- Prüfen, ob die Gruppe erlaubt ist ---
+def is_group_allowed(chat_id, cursor):
+    cursor.execute("SELECT chat_id FROM allowed_groups WHERE chat_id = ?", (chat_id,))
     return cursor.fetchone() is not None
 
 # --- Befehl: /id (Aktuelle Gruppen-ID anzeigen) ---
@@ -36,21 +47,22 @@ async def get_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📌 Die Gruppen-ID ist: `{chat_id}`", parse_mode="Markdown")
 
 # --- Überprüfung, ob ein Link in der Whitelist der Gruppe ist ---
-def is_whitelisted(chat_id, link):
+def is_whitelisted(chat_id, link, cursor):
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    return cursor.fetchone() is not None
+    result = cursor.fetchone()
+    return result is not None
 
 # --- Befehl: /link <URL> (Link zur Whitelist der aktuellen Gruppe hinzufügen) ---
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) != 1:
+        await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /link https://t.me/gruppe")
+        return
+
     chat_id = update.message.chat_id
 
     # Prüfen, ob die Gruppe erlaubt ist
-    if not is_group_allowed(chat_id):
+    if not is_group_allowed(chat_id, cursor):
         await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
-        return
-
-    if len(context.args) != 1:
-        await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /link https://t.me/gruppe")
         return
 
     link = context.args[0].strip()
@@ -64,15 +76,15 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Befehl: /del <URL> (Link aus der Whitelist der aktuellen Gruppe löschen) ---
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) != 1:
+        await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /del https://t.me/gruppe")
+        return
+
     chat_id = update.message.chat_id
 
     # Prüfen, ob die Gruppe erlaubt ist
-    if not is_group_allowed(chat_id):
+    if not is_group_allowed(chat_id, cursor):
         await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
-        return
-
-    if len(context.args) != 1:
-        await update.message.reply_text("❌ Bitte gib einen gültigen Link an. Beispiel: /del https://t.me/gruppe")
         return
 
     link = context.args[0].strip()
@@ -89,7 +101,7 @@ async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
 
     # Prüfen, ob die Gruppe erlaubt ist
-    if not is_group_allowed(chat_id):
+    if not is_group_allowed(chat_id, cursor):
         await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
         return
 
@@ -108,10 +120,9 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     message = update.message
     chat_id = message.chat_id
 
-    # Prüfen, ob die Gruppe für `cpbot` erlaubt ist
-    if not is_group_allowed(chat_id):
-        print(f"⛔ Gruppe {chat_id} ist nicht erlaubt. Nachricht wird ignoriert.")
-        return  # Bot ignoriert die Nachricht
+    # Prüfen, ob die Gruppe erlaubt ist
+    if not is_group_allowed(chat_id, cursor):
+        return  # Gruppe ist nicht erlaubt, Bot ignoriert die Nachricht
 
     user = message.from_user
     user_display_name = user.username if user.username else user.full_name
@@ -124,7 +135,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         print(f"🔗 Erkannter Telegram-Link: {link}")
 
         # Wenn der Link nicht in der Whitelist der aktuellen Gruppe steht, Nachricht löschen
-        if not is_whitelisted(chat_id, link):
+        if not is_whitelisted(chat_id, link, cursor):
             print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
             await context.bot.send_message(
                 chat_id=chat_id,
@@ -151,7 +162,7 @@ def main():
     # Nachrichten-Handler hinzufügen
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
-    print("🤖 CP-Bot gestartet und überwacht Telegram-Gruppenlinks...")
+    print("🤖 Bot wird gestartet und überwacht Telegram-Gruppenlinks...")
     application.run_polling()
 
 if __name__ == "__main__":
