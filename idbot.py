@@ -5,6 +5,9 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
+# --- Passwort ---
+PASSWORD = "Shorty2306"
+
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
@@ -13,12 +16,29 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- /start-Befehl: Zeigt zuerst die Bots an ---
+# --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_bots(update, context)
+    await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
+    context.user_data["awaiting_password"] = True  # Wartet auf Passwort-Eingabe
+
+# --- Passwortprüfung ---
+async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_password"):
+        if update.message.text == PASSWORD:
+            await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.")
+            context.user_data["authenticated"] = True
+            context.user_data["awaiting_password"] = False
+            await show_bots(update, context)  # Zeigt direkt die Bot-Auswahl
+        else:
+            await update.message.reply_text("❌ Falsches Passwort! Zugriff verweigert.")
+            context.user_data["awaiting_password"] = False
 
 # --- Alle Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("authenticated"):
+        await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das richtige Passwort ein.")
+        return
+
     query = update.callback_query if update.callback_query else update.message
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
@@ -117,6 +137,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))  # Passwortprüfung
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
