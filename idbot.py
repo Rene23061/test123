@@ -32,10 +32,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if isinstance(query, Update):
-        await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,17 +61,27 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
-        # **Fix: Sicherstellen, dass die Spalte existiert**
+        # 🔍 Debug: Prüfen, ob die Spalte existiert
         cursor.execute("PRAGMA table_info(allowed_groups);")
         columns = [col[1] for col in cursor.fetchall()]
         if column_name not in columns:
             await update.message.reply_text(f"⚠️ Fehler: Der Bot '{bot_name}' existiert nicht in der Datenbank.")
             return
 
-        # **Fix: Gruppen korrekt eintragen oder aktualisieren**
-        cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1) "
-                       f"ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1", (chat_id,))
+        # ✅ Fix: Gruppen korrekt eintragen (UPDATE, falls bereits vorhanden)
+        cursor.execute(f"""
+            INSERT INTO allowed_groups (chat_id, {column_name}) 
+            VALUES (?, 1) 
+            ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1
+        """, (chat_id,))
+        
         conn.commit()
+
+        # 🔍 Debug: Prüfen, ob die Gruppe gespeichert wurde
+        cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+        groups = cursor.fetchall()
+        print(f"🔍 DEBUG: Gruppen in {bot_name}: {groups}")  # Wird in der Konsole ausgegeben
+
         await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
 
         context.user_data["awaiting_group_add"] = False
