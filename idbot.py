@@ -30,8 +30,11 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+
+    if isinstance(query, Update):
+        await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    else:
+        await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,12 +49,12 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
     ]
     
-    await query.message.edit_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
+    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
 
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,7 +75,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Gruppe aus der Whitelist entfernen ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du entfernen möchtest.")
+    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du entfernen möchtest.")
     context.user_data["awaiting_group_remove"] = True
 
 async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,7 +108,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         response = f"❌ Keine Gruppen für {bot_name} eingetragen."
 
-    await query.message.edit_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
     ]))
 
