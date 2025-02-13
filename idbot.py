@@ -5,6 +5,9 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
+# --- Passwortschutz ---
+PASSWORD = "Shorty2306"
+
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 DB_PATH = "/root/cpkiller/whitelist.db"
 
@@ -23,23 +26,45 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Startmenü mit Bot-Auswahl (nur `sbot` & `cpbot`) ---
+# --- Startmenü mit Passwortschutz ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+
+    # Prüfen, ob der Nutzer bereits eingeloggt ist
+    if context.user_data.get("authenticated"):
+        await show_bot_selection(update)
+    else:
+        context.user_data["awaiting_password"] = True
+        await update.message.reply_text("🔐 Bitte gib das Passwort ein:")
+
+# --- Passwort-Eingabe prüfen ---
+async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "awaiting_password" in context.user_data:
+        if update.message.text == PASSWORD:
+            context.user_data["authenticated"] = True
+            del context.user_data["awaiting_password"]
+            await show_bot_selection(update)
+        else:
+            await update.message.reply_text("❌ Falsches Passwort. Versuch es erneut.")
+
+# --- Bot-Auswahl-Menü ---
+async def show_bot_selection(update: Update):
     keyboard = [
         [InlineKeyboardButton("🤖 sbot", callback_data="bot_sbot")],
         [InlineKeyboardButton("🛡 cpbot", callback_data="bot_cpbot")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.message:
+        await update.message.reply_text("🔧 Wähle einen Bot:", reply_markup=reply_markup)
+    else:
+        await update.callback_query.message.edit_text("🔧 Wähle einen Bot:", reply_markup=reply_markup)
 
-    # Sicherstellen, dass die Nachricht existiert (Fehler vermeiden)
-    message = update.message or update.effective_message
-    await message.reply_text("🔧 Wähle einen Bot:", reply_markup=reply_markup)
-
-# --- Menü für `sbot` oder `cpbot` anzeigen ---
+# --- Menü für sbot oder cpbot ---
 async def show_bot_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    bot_type = query.data.split("_")[1]  # `sbot` oder `cpbot`
-    context.user_data["selected_bot"] = bot_type  # Speichern, welcher Bot gewählt wurde
+    bot_type = query.data.split("_")[1]  # sbot oder cpbot
+    context.user_data["selected_bot"] = bot_type  
 
     keyboard = [
         [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
@@ -47,31 +72,21 @@ async def show_bot_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Gruppe entfernen", callback_data="remove_group")],
         [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_bots")]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await query.message.edit_text(f"🔹 Verwaltung für `{bot_type}`:", reply_markup=reply_markup)
+    await query.message.edit_text(f"🔹 Verwaltung für `{bot_type}`:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Gruppen auflisten ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_type = context.user_data.get("selected_bot")
 
-    if not bot_type:
-        await query.answer("❌ Kein Bot ausgewählt!")
-        return
-
     column = "allow_sbot" if bot_type == "sbot" else "allow_cpbot"
     cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column} = 1")
     groups = cursor.fetchall()
 
     if not groups:
-        await query.message.edit_text(f"❌ Keine erlaubten Gruppen für `{bot_type}`!", reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Zurück", callback_data=f"bot_{bot_type}")]
-        ]))
-        return
-
-    response = f"📋 **Erlaubte Gruppen für `{bot_type}`:**\n"
-    response += "\n".join(f"- `{chat_id[0]}`" for chat_id in groups)
+        response = f"❌ Keine erlaubten Gruppen für `{bot_type}`!"
+    else:
+        response = f"📋 **Erlaubte Gruppen für `{bot_type}`:**\n" + "\n".join(f"- `{chat_id[0]}`" for chat_id in groups)
 
     await query.message.edit_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Zurück", callback_data=f"bot_{bot_type}")]
@@ -82,21 +97,15 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_type = context.user_data.get("selected_bot")
 
-    if not bot_type:
-        await query.answer("❌ Kein Bot ausgewählt!")
-        return
-
     context.user_data["adding_group"] = bot_type
-    await query.message.edit_text("🆔 Sende mir die Gruppen-ID, die du hinzufügen möchtest.")
+    await query.message.edit_text("🆔 Sende mir die Gruppen-ID, die du hinzufügen möchtest.\n\n🔙 Zurück:", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Abbrechen", callback_data=f"bot_{bot_type}")]
+    ]))
 
 # --- Gruppe entfernen ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_type = context.user_data.get("selected_bot")
-
-    if not bot_type:
-        await query.answer("❌ Kein Bot ausgewählt!")
-        return
 
     column = "allow_sbot" if bot_type == "sbot" else "allow_cpbot"
     cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column} = 1")
@@ -133,48 +142,33 @@ async def receive_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """, (chat_id,))
         conn.commit()
 
-        await update.message.reply_text(f"✅ Gruppe `{chat_id}` wurde für `{bot_type}` hinzugefügt.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Gruppe `{chat_id}` wurde für `{bot_type}` hinzugefügt.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Zurück", callback_data=f"bot_{bot_type}")]
+        ]))
 
     except sqlite3.IntegrityError:
         await update.message.reply_text("⚠️ Diese Gruppen-ID ist bereits gespeichert.")
 
     del context.user_data["adding_group"]
 
-# --- Gruppe aus der Datenbank entfernen ---
-async def remove_group_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    chat_id = query.data.split("_")[1]
-    bot_type = context.user_data.get("selected_bot")
-
-    if not bot_type:
-        await query.answer("❌ Kein Bot ausgewählt!")
-        return
-
-    column = "allow_sbot" if bot_type == "sbot" else "allow_cpbot"
-    cursor.execute(f"UPDATE allowed_groups SET {column} = 0 WHERE chat_id = ?", (chat_id,))
-    conn.commit()
-
-    await query.answer(f"✅ Gruppe `{chat_id}` wurde entfernt.")
-    await remove_group(update, context)  # Menü aktualisieren
-
 # --- Zurück zum Bot-Menü ---
 async def back_to_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start(update, context)
+    await show_bot_selection(update)
 
 # --- Hauptfunktion ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     application.add_handler(CallbackQueryHandler(show_bot_menu, pattern="^bot_"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
-    application.add_handler(CallbackQueryHandler(remove_group_confirm, pattern="^remove_"))
     application.add_handler(CallbackQueryHandler(back_to_bots, pattern="^back_to_bots$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_group_id))
 
-    print("🤖 ID-Bot mit Inline-Menü gestartet...")
+    print("🤖 ID-Bot mit Passwort gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
