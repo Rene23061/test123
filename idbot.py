@@ -19,7 +19,7 @@ conn, cursor = init_db()
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
-    context.user_data["awaiting_password"] = True  # Wartet auf Passwort-Eingabe
+    context.user_data["awaiting_password"] = True
 
 # --- Passwortprüfung ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -28,7 +28,7 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.")
             context.user_data["authenticated"] = True
             context.user_data["awaiting_password"] = False
-            await show_bots(update, context)  # Zeigt direkt die Bot-Auswahl
+            await show_bots(update, context)
         else:
             await update.message.reply_text("❌ Falsches Passwort! Zugriff verweigert.")
             context.user_data["awaiting_password"] = False
@@ -83,12 +83,30 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
+        # Überprüfen, ob die Spalte existiert
+        cursor.execute("PRAGMA table_info(allowed_groups);")
+        columns = [col[1] for col in cursor.fetchall()]
+        if column_name not in columns:
+            await update.message.reply_text(f"❌ Fehler: Die Spalte {column_name} existiert nicht in der Datenbank!")
+            return
+
         try:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+            # Prüfen, ob die Gruppe bereits existiert
+            cursor.execute("SELECT chat_id FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+            result = cursor.fetchone()
+
+            if result:
+                # Falls die Gruppe schon existiert, Spalte aktualisieren
+                cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
+            else:
+                # Falls die Gruppe nicht existiert, neuen Eintrag erstellen
+                cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+
             conn.commit()
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
-        except sqlite3.IntegrityError:
-            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
+
+        except sqlite3.Error as e:
+            await update.message.reply_text(f"⚠️ Fehler beim Einfügen in die Datenbank: {e}")
 
         context.user_data["awaiting_group_add"] = False
 
@@ -137,7 +155,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))  # Passwortprüfung
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
