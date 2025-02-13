@@ -19,10 +19,10 @@ async def delete_system_messages(update: Update, context: CallbackContext):
             await context.bot.delete_message(chat_id=update.message.chat_id, message_id=update.message.message_id)
             logging.info(f"✅ Systemnachricht gelöscht in Chat {update.message.chat_id}")
 
-async def main():
-    """Startet den Telegram-Bot."""
+async def run_bot():
+    """Startet den Telegram-Bot als asynchronen Task, um asyncio-Fehler zu vermeiden."""
     app = Application.builder().token(BOT_TOKEN).build()
-
+    
     # Überwacht Systemnachrichten und löscht sie
     app.add_handler(MessageHandler(filters.StatusUpdate.ALL, delete_system_messages))
 
@@ -30,4 +30,14 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            logging.warning("⚠️ Event loop läuft bereits, starte Bot als Task...")
+            task = loop.create_task(run_bot())
+        else:
+            logging.info("🚀 Starte Bot in neuer Event Loop...")
+            loop.run_until_complete(run_bot())
+    except RuntimeError:
+        logging.info("🔄 Erstelle neue Event Loop für den Bot...")
+        asyncio.run(run_bot())
