@@ -16,27 +16,9 @@ PASSWORD = "Shorty2306"
 def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
-
-    # Tabelle erstellen, falls nicht vorhanden
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS allowed_groups (
-            chat_id TEXT PRIMARY KEY
-        )
-    """)
-    conn.commit()
     return conn, cursor
 
 conn, cursor = init_db()
-
-# --- Dynamisches Hinzufügen neuer Bot-Spalten ---
-def add_bot_column(bot_name):
-    column_name = f"allow_{bot_name}"
-    cursor.execute("PRAGMA table_info(allowed_groups);")
-    columns = [col[1] for col in cursor.fetchall()]
-    
-    if column_name not in columns:
-        cursor.execute(f"ALTER TABLE allowed_groups ADD COLUMN {column_name} INTEGER DEFAULT 0")
-        conn.commit()
 
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,6 +48,10 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
 
     bots = [col.replace("allow_", "") for col in columns]
+
+    logging.info(f"Gefundene Bot-Spalten: {columns}")
+    logging.info(f"Gefundene Bots: {bots}")
+
     if not bots:
         await query.reply_text("❌ Keine Bots gefunden!")
         return
@@ -93,7 +79,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe zur Whitelist hinzufügen ---
+# --- Gruppe zur Whitelist hinzufügen (Identische Logik wie beim Lesen) ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
@@ -106,9 +92,11 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         column_name = f"allow_{bot_name}"
 
         try:
-            add_bot_column(bot_name)  # Stelle sicher, dass die Spalte existiert
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1) ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1", (chat_id,))
+            cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
+            if cursor.rowcount == 0:
+                cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
             conn.commit()
+
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
             logging.info(f"Gruppe {chat_id} zu {bot_name} hinzugefügt.")
         except sqlite3.Error as e:
@@ -117,7 +105,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["awaiting_group_add"] = False
 
-# --- Gruppe aus der Whitelist entfernen ---
+# --- Gruppe aus der Whitelist entfernen (Identische Logik wie beim Lesen) ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du entfernen möchtest.")
@@ -144,6 +132,24 @@ async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYP
             logging.error(f"Fehler beim Löschen: {e}")
 
         context.user_data["awaiting_group_remove"] = False
+
+# --- Gruppen anzeigen ---
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
+
+    if groups:
+        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
+    else:
+        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
+
+    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
+    ]))
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
