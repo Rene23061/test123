@@ -16,17 +16,23 @@ def connect_db():
 
 # --- Passwortabfrage beim Start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Startet den Bot mit einer Passwortabfrage."""
+    context.user_data["waiting_for_password"] = True
     await update.message.reply_text("🔒 Bitte gib das Passwort ein:")
 
 # --- Passwortprüfung ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text.strip() == PASSWORD:
-        await show_main_menu(update, context)
-    else:
-        await update.message.reply_text("❌ Falsches Passwort! Versuch es erneut.")
+    """Überprüft das Passwort."""
+    if "waiting_for_password" in context.user_data and context.user_data["waiting_for_password"]:
+        if update.message.text.strip() == PASSWORD:
+            context.user_data["waiting_for_password"] = False
+            await show_main_menu(update, context)
+        else:
+            await update.message.reply_text("❌ Falsches Passwort! Versuch es erneut.")
 
 # --- Hauptmenü anzeigen ---
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zeigt die Liste der Bots mit Buttons an."""
     conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("SELECT bot_id, name FROM bots")
@@ -42,23 +48,25 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Funktion zum Hinzufügen eines neuen Bots ---
 async def add_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Bitte sende mir den Namen des neuen Bots.")
-
-    # Speichert den Status, dass wir auf den Bot-Namen warten
+    await query.message.edit_text("✍️ Bitte sende mir den **Benutzernamen** des neuen Bots (`@sbot`).")
     context.user_data["waiting_for_bot_name"] = True
 
-# --- Funktion zum Speichern des Bots nach Namenseingabe ---
+# --- Speichert den Bot-Namen und fragt nach dem Token ---
 async def save_bot_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "waiting_for_bot_name" in context.user_data and context.user_data["waiting_for_bot_name"]:
         bot_name = update.message.text.strip()
-        await update.message.reply_text("✍️ Jetzt bitte das Bot-Token senden.")
 
-        # Speichert den Namen für den nächsten Schritt
+        if not bot_name.startswith("@"):
+            await update.message.reply_text("❌ Der Bot-Name muss mit `@` beginnen!")
+            return
+
         context.user_data["new_bot_name"] = bot_name
         context.user_data["waiting_for_bot_name"] = False
         context.user_data["waiting_for_bot_token"] = True
 
-# --- Funktion zum Speichern des Bot-Tokens in die Datenbank ---
+        await update.message.reply_text("✍️ Jetzt bitte das **Bot-Token** senden.")
+
+# --- Speichert das Bot-Token in der Datenbank ---
 async def save_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "waiting_for_bot_token" in context.user_data and context.user_data["waiting_for_bot_token"]:
         bot_token = update.message.text.strip()
@@ -78,43 +86,13 @@ async def save_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["waiting_for_bot_token"] = False
         context.user_data.pop("new_bot_name", None)
 
-# --- Bot-Details anzeigen ---
-async def show_bot_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_id = query.data.split("_")[1]
-
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM bots WHERE bot_id = ?", (bot_id,))
-    bot_name = cursor.fetchone()[0]
-    conn.close()
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data=f"add_group_{bot_id}")],
-        [InlineKeyboardButton("❌ Gruppe entfernen", callback_data=f"remove_group_{bot_id}")],
-        [InlineKeyboardButton("⬅️ Zurück", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await query.message.edit_text(f"⚙️ **Verwalte {bot_name}:**", reply_markup=reply_markup)
-
-# --- Zurück zum Hauptmenü ---
-async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.message.delete()
-    await show_main_menu(update, context)
-
 # --- Callback-Handler für Inline-Buttons ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "main_menu":
-        await back_to_main_menu(update, context)
-    elif query.data == "add_bot":
+    if query.data == "add_bot":
         await add_bot(update, context)
-    elif query.data.startswith("bot_"):
-        await show_bot_details(update, context)
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
