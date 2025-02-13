@@ -88,7 +88,9 @@ async def back_to_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await start(query.message, context)
 
-# --- Hauptfunktion zum Starten des
+# --- Hauptfunktion zum Starten des Bots ---
+def main():
+   
 
 Hier ist dein komplett korrigierter **`idbot.py`** mit folgenden Fixes:  
 
@@ -246,4 +248,4 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    main() 
+    main()
