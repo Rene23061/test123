@@ -50,7 +50,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     keyboard = [
-        [InlineKeyboardButton("📌 Gruppen-ID anzeigen", callback_data="show_id")],
+        [InlineKeyboardButton("📌 Gruppen-ID anzeigen", callback_data="show_group_id")],
         [InlineKeyboardButton("📋 Whitelist anzeigen", callback_data="show_whitelist")],
         [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_start")]
     ]
@@ -88,6 +88,37 @@ async def back_to_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await start(query.message, context)
 
+# --- Nachrichtenkontrolle ---
+async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+
+    # Prüfen, ob die Gruppe erlaubt ist
+    if not is_group_allowed(chat_id, cursor):
+        return  # Gruppe ist nicht erlaubt, Bot ignoriert die Nachricht
+
+    user = message.from_user
+    user_display_name = user.username if user.username else user.full_name
+    text = message.text or ""
+    print(f"📩 Nachricht empfangen von {user_display_name}: {text}")
+
+    # Nach Telegram-Gruppenlinks suchen
+    for match in TELEGRAM_LINK_PATTERN.finditer(text):
+        link = match.group(0)
+        print(f"🔗 Erkannter Telegram-Link: {link}")
+
+        # Wenn der Link nicht in der Whitelist der aktuellen Gruppe steht, Nachricht löschen
+        if not is_whitelisted(chat_id, link, cursor):
+            print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🚫 Hallo {user_display_name}, dein Link wurde automatisch gelöscht. "
+                     f"Bitte kontaktiere einen Admin, wenn du Fragen hast.",
+                reply_to_message_id=message.message_id
+            )
+            await context.bot.delete_message(chat_id, message.message_id)
+            return
+
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     global conn, cursor
@@ -97,11 +128,10 @@ def main():
 
     # Befehle hinzufügen
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("id", get_group_id))
 
     # Inline-Menü Handler
     application.add_handler(CallbackQueryHandler(show_menu, pattern="^show_menu$"))
-    application.add_handler(CallbackQueryHandler(show_group_id, pattern="^show_id$"))
+    application.add_handler(CallbackQueryHandler(show_group_id, pattern="^show_group_id$"))
     application.add_handler(CallbackQueryHandler(show_whitelist, pattern="^show_whitelist$"))
     application.add_handler(CallbackQueryHandler(back_to_start, pattern="^back_to_start$"))
 
