@@ -28,7 +28,7 @@ def init_db():
     """)
 
     conn.commit()
-    print("✅ Datenbank erfolgreich initialisiert.")
+    print("Datenbank erfolgreich initialisiert.")
     return conn, cursor
 
 # --- Prüfen, ob die Gruppe erlaubt ist ---
@@ -38,15 +38,15 @@ def is_group_allowed(chat_id, cursor):
 
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🔑 Zugang erhalten", callback_data="enter_password")]]
+    keyboard = [[InlineKeyboardButton("Zugang erhalten", callback_data="enter_password")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text("🔒 Bitte bestätige dein Passwort, um fortzufahren:", reply_markup=reply_markup)
+    await update.message.reply_text("Bitte bestätige dein Passwort, um fortzufahren:", reply_markup=reply_markup)
 
 # --- Passwort-Eingabe ---
 async def enter_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("🔑 Bitte sende dein Passwort als Nachricht.")
+    await query.message.edit_text("Bitte sende dein Passwort als Nachricht.")
 
     context.user_data["awaiting_password"] = True
 
@@ -55,14 +55,14 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.text == ADMIN_PASSWORD:
             context.user_data["authenticated"] = True
             keyboard = [
-                [InlineKeyboardButton("📌 Gruppen-ID anzeigen", callback_data="show_group_id")],
-                [InlineKeyboardButton("📋 Whitelist verwalten", callback_data="manage_whitelist")],
-                [InlineKeyboardButton("🔗 Links verwalten", callback_data="manage_links")],
+                [InlineKeyboardButton("Gruppen-ID anzeigen", callback_data="show_group_id")],
+                [InlineKeyboardButton("Whitelist verwalten", callback_data="manage_whitelist")],
+                [InlineKeyboardButton("Links verwalten", callback_data="manage_links")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text("✅ Zugriff gewährt! Wähle eine Aktion:", reply_markup=reply_markup)
+            await update.message.reply_text("Zugriff gewährt! Wähle eine Aktion:", reply_markup=reply_markup)
         else:
-            await update.message.reply_text("❌ Falsches Passwort! Bitte versuche es erneut.")
+            await update.message.reply_text("Falsches Passwort! Bitte versuche es erneut.")
 
         context.user_data["awaiting_password"] = False
 
@@ -71,10 +71,10 @@ async def show_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
     await query.message.edit_text(
-        f"📌 Die Gruppen-ID ist: `{chat_id}`", 
+        f"Die Gruppen-ID ist: `{chat_id}`", 
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")]
+            [InlineKeyboardButton("Zurück", callback_data="back_to_menu")]
         ])
     )
 
@@ -82,21 +82,21 @@ async def show_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def manage_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
-        [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group")],
-        [InlineKeyboardButton("📋 Erlaubte Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")]
+        [InlineKeyboardButton("Gruppe hinzufügen", callback_data="add_group")],
+        [InlineKeyboardButton("Gruppe entfernen", callback_data="remove_group")],
+        [InlineKeyboardButton("Erlaubte Gruppen anzeigen", callback_data="list_groups")],
+        [InlineKeyboardButton("Zurück", callback_data="back_to_menu")]
     ]
-    await query.message.edit_text("📋 Whitelist-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.edit_text("Whitelist-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
+    await query.message.edit_text("Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
 
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du entfernen möchtest.")
+    await query.message.edit_text("Sende die Gruppen-ID, die du entfernen möchtest.")
     context.user_data["awaiting_group_remove"] = True
 
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,24 +105,24 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     groups = cursor.fetchall()
     
     if groups:
-        response = "📋 **Erlaubte Gruppen:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
+        response = "Erlaubte Gruppen:\n" + "\n".join(f"- `{group[0]}`" for group in groups)
     else:
-        response = "❌ Es sind keine Gruppen erlaubt."
+        response = "Es sind keine Gruppen erlaubt."
     
     await query.message.edit_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")]
+        [InlineKeyboardButton("Zurück", callback_data="back_to_menu")]
     ]))
 
 # --- Links-Verwaltung ---
 async def manage_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     keyboard = [
-        [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
-        [InlineKeyboardButton("➖ Link entfernen", callback_data="remove_link")],
-        [InlineKeyboardButton("📋 Erlaubte Links anzeigen", callback_data="list_links")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")]
+        [InlineKeyboardButton("Link hinzufügen", callback_data="add_link")],
+        [InlineKeyboardButton("Link entfernen", callback_data="remove_link")],
+        [InlineKeyboardButton("Erlaubte Links anzeigen", callback_data="list_links")],
+        [InlineKeyboardButton("Zurück", callback_data="back_to_menu")]
     ]
-    await query.message.edit_text("🔗 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.edit_text("Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Zurück zum Hauptmenü ---
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,7 +150,7 @@ def main():
     application.add_handler(CallbackQueryHandler(manage_links, pattern="^manage_links$"))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
 
-    print("🤖 Bot gestartet! Warte auf Befehle...")
+    print("Bot gestartet! Warte auf Befehle...")
     application.run_polling()
 
 if __name__ == "__main__":
