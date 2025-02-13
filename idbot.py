@@ -3,7 +3,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Logging für Debugging (Nur Datenbank) ---
+# --- Logging für Debugging (Nur Datenbank-relevante Logs) ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # --- Telegram-Bot-Token ---
@@ -55,10 +55,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if isinstance(query, Update) or not hasattr(query, "edit_message_text"):
-        await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,7 +72,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe zur Whitelist hinzufügen (Nur relevanter Debug) ---
+# --- Gruppe zur Whitelist hinzufügen (Minimaler Debugging) ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
@@ -91,46 +88,36 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             if cursor.rowcount == 0:  
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-                logging.info(f"➕ INSERT: {chat_id} in {column_name}")
+                logging.info(f"➕ Neue Gruppe eingetragen: {chat_id} in {column_name}")
             else:
-                logging.info(f"🔄 UPDATE: {chat_id} in {column_name}")
+                logging.info(f"🔄 Bestehende Gruppe aktualisiert: {chat_id} in {column_name}")
 
             conn.commit()
-            logging.info(f"✅ COMMIT: {chat_id} wurde gespeichert")
+            logging.info(f"✅ Datenbank gespeichert: {chat_id} in {column_name}")
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
         except sqlite3.Error as e:
-            logging.error(f"❌ SQL-Fehler beim Einfügen: {e}")
+            logging.error(f"❌ Fehler beim Einfügen: {e}")
             await update.message.reply_text(f"⚠️ Fehler: {e}")
 
         context.user_data["awaiting_group_add"] = False
 
-# --- Gruppe aus der Whitelist entfernen (Nur relevanter Debug) ---
-async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Gruppen anzeigen ---
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du entfernen möchtest.")
-    context.user_data["awaiting_group_remove"] = True
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
 
-async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_group_remove"):
-        bot_name = context.user_data["selected_bot"]
-        chat_id = update.message.text.strip()
-        column_name = f"allow_{bot_name}"
+    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
 
-        try:
-            cursor.execute(f"UPDATE allowed_groups SET {column_name} = 0 WHERE chat_id = ?", (chat_id,))
-            conn.commit()
+    if groups:
+        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
+    else:
+        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
 
-            if cursor.rowcount > 0:
-                logging.info(f"❌ DELETE: {chat_id} aus {column_name}")
-                await update.message.reply_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.")
-            else:
-                logging.warning(f"⚠️ Kein Eintrag für {chat_id} in {column_name} gefunden!")
-                await update.message.reply_text(f"⚠️ Diese Gruppe existiert nicht für {bot_name}.")
-        except sqlite3.Error as e:
-            logging.error(f"❌ Fehler beim Löschen: {e}")
-            await update.message.reply_text(f"⚠️ Fehler: {e}")
-
-        context.user_data["awaiting_group_remove"] = False
+    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
+    ]))
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
@@ -139,12 +126,11 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
-    application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
+    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
