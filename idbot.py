@@ -43,19 +43,25 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das richtige Passwort ein.")
         return
 
-    query = update.callback_query if update.callback_query else update.message
+    query = update.callback_query if update.callback_query else None
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
 
     bots = [col.replace("allow_", "") for col in columns]
     if not bots:
-        await query.reply_text("❌ Keine Bots gefunden!")
+        if query:
+            await query.message.reply_text("❌ Keine Bots gefunden!")
+        else:
+            await update.message.reply_text("❌ Keine Bots gefunden!")
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    if query:
+        await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,7 +78,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe zur Whitelist hinzufügen (Minimaler Debugging) ---
+# --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
