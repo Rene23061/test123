@@ -13,7 +13,7 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- /start-Befehl: Zeigt die Bots aus der Datenbank an ---
+# --- /start-Befehl ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_bots(update, context)
 
