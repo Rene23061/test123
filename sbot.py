@@ -15,7 +15,7 @@ logging.basicConfig(
 
 # Verbindung zur SQLite-Datenbank
 def init_db():
-    conn = sqlite3.connect("/pfad/zu/deinem/whitelist.db", check_same_thread=False)
+    conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS allowed_groups (
