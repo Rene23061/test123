@@ -25,7 +25,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bots = [col.replace("allow_", "") for col in columns]
     if not bots:
-        await query.message.reply_text("❌ Keine Bots gefunden!")
+        await query.reply_text("❌ Keine Bots gefunden!")
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
