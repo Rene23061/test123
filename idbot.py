@@ -16,12 +16,10 @@ def connect_db():
 
 # --- Passwortabfrage beim Start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Startet den Bot mit einer Passwortabfrage."""
     await update.message.reply_text("🔒 Bitte gib das Passwort ein:")
 
 # --- Passwortprüfung ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Überprüft das Passwort."""
     if update.message.text.strip() == PASSWORD:
         await show_main_menu(update, context)
     else:
@@ -29,7 +27,6 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Hauptmenü anzeigen ---
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Zeigt die Liste der Bots mit Buttons an."""
     conn = connect_db()
     cursor = conn.cursor()
     cursor.execute("SELECT bot_id, name FROM bots")
@@ -42,9 +39,47 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🤖 **Deine Bots:**", reply_markup=reply_markup)
 
+# --- Funktion zum Hinzufügen eines neuen Bots ---
+async def add_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.edit_text("✍️ Bitte sende mir den Namen des neuen Bots.")
+
+    # Speichert den Status, dass wir auf den Bot-Namen warten
+    context.user_data["waiting_for_bot_name"] = True
+
+# --- Funktion zum Speichern des Bots nach Namenseingabe ---
+async def save_bot_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "waiting_for_bot_name" in context.user_data and context.user_data["waiting_for_bot_name"]:
+        bot_name = update.message.text.strip()
+        await update.message.reply_text("✍️ Jetzt bitte das Bot-Token senden.")
+
+        # Speichert den Namen für den nächsten Schritt
+        context.user_data["new_bot_name"] = bot_name
+        context.user_data["waiting_for_bot_name"] = False
+        context.user_data["waiting_for_bot_token"] = True
+
+# --- Funktion zum Speichern des Bot-Tokens in die Datenbank ---
+async def save_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "waiting_for_bot_token" in context.user_data and context.user_data["waiting_for_bot_token"]:
+        bot_token = update.message.text.strip()
+        bot_name = context.user_data["new_bot_name"]
+
+        conn = connect_db()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO bots (name, token) VALUES (?, ?)", (bot_name, bot_token))
+            conn.commit()
+            await update.message.reply_text(f"✅ Der Bot `{bot_name}` wurde erfolgreich hinzugefügt!")
+        except sqlite3.IntegrityError:
+            await update.message.reply_text("⚠️ Ein Bot mit diesem Namen oder Token existiert bereits!")
+        conn.close()
+
+        # Reset des Status
+        context.user_data["waiting_for_bot_token"] = False
+        context.user_data.pop("new_bot_name", None)
+
 # --- Bot-Details anzeigen ---
 async def show_bot_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Zeigt die Detailansicht eines Bots mit Gruppenverwaltung."""
     query = update.callback_query
     bot_id = query.data.split("_")[1]
 
@@ -76,6 +111,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "main_menu":
         await back_to_main_menu(update, context)
+    elif query.data == "add_bot":
+        await add_bot(update, context)
     elif query.data.startswith("bot_"):
         await show_bot_details(update, context)
 
@@ -85,6 +122,8 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_bot_name))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_bot_token))
     application.add_handler(CallbackQueryHandler(button_handler))
 
     logging.info("🤖 ID-Bot gestartet...")
