@@ -1,27 +1,26 @@
-from telegram import Update, Bot
-from telegram.ext import Updater, MessageHandler, Filters, CallbackContext
+import asyncio
+from telegram import Update
+from telegram.ext import Application, MessageHandler, filters, CallbackContext
 
 # Dein Bot-Token
 BOT_TOKEN = "7720861006:AAGbTV0_haSgPhtNsv2unqy6ZiyI7A_BrBU"
 
-def delete_system_messages(update: Update, context: CallbackContext):
+async def delete_system_messages(update: Update, context: CallbackContext):
     """Löscht Systemnachrichten wie Beitritt, Austritt oder angepinnte Nachrichten."""
     if update.message:
         if update.message.new_chat_members or update.message.left_chat_member or update.message.pinned_message:
-            context.bot.delete_message(chat_id=update.message.chat_id, message_id=update.message.message_id)
+            await context.bot.delete_message(chat_id=update.message.chat_id, message_id=update.message.message_id)
             print("✅ Systemnachricht gelöscht")
 
-def main():
+async def main():
     """Startet den Telegram-Bot"""
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = Application.builder().token(BOT_TOKEN).build()
 
     # Überwacht Systemnachrichten und löscht sie
-    dp.add_handler(MessageHandler(Filters.status_update, delete_system_messages))
+    app.add_handler(MessageHandler(filters.StatusUpdate.ALL, delete_system_messages))
 
     print("🚀 Bot läuft und löscht neue Systemnachrichten...")
-    updater.start_polling()
-    updater.idle()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
