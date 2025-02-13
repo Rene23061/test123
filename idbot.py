@@ -1,132 +1,149 @@
+import re
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
+
+# --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
+TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
+
+    # Tabelle für die gruppenbasierte Whitelist erstellen
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS whitelist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER,
+            link TEXT UNIQUE
+        )
+    """)
+
+    # Tabelle für die erlaubten Gruppen erstellen
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS allowed_groups (
+            chat_id INTEGER PRIMARY KEY
+        )
+    """)
+
+    conn.commit()
+    print("✅ Datenbank erfolgreich initialisiert.")
     return conn, cursor
 
-conn, cursor = init_db()
+# --- Prüfen, ob die Gruppe erlaubt ist ---
+def is_group_allowed(chat_id):
+    cursor.execute("SELECT chat_id FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+    return cursor.fetchone() is not None
 
-# --- /start-Befehl: Direkt Bot-Menü anzeigen ---
+# --- Prüfen, ob ein Link in der Whitelist steht ---
+def is_whitelisted(chat_id, link):
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+    return cursor.fetchone() is not None
+
+# --- /start-Befehl: Menü anzeigen ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await show_bots(update, context)
+    keyboard = [[InlineKeyboardButton("🔧 Verwaltung starten", callback_data="show_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text("Willkommen! Wähle eine Aktion:", reply_markup=reply_markup)
 
-# --- Bots aus der Datenbank anzeigen ---
-async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query if update.callback_query else update.message
-    cursor.execute("PRAGMA table_info(allowed_groups);")
-    columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
-
-    bots = [col.replace("allow_", "") for col in columns]
-    if not bots:
-        await query.reply_text("❌ Keine Bots gefunden!")
-        return
-
-    keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
+# --- Menü anzeigen ---
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    keyboard = [
+        [InlineKeyboardButton("📌 Gruppen-ID anzeigen", callback_data="show_group_id")],
+        [InlineKeyboardButton("📋 Whitelist anzeigen", callback_data="show_whitelist")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_start")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if isinstance(query, Update):
-        await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    await query.message.edit_text("🔧 Verwaltungsmenu:", reply_markup=reply_markup)
 
-# --- Bot-Verwaltungsmenü ---
-async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Gruppen-ID anzeigen ---
+async def show_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    bot_name = query.data.replace("manage_bot_", "")
-    context.user_data["selected_bot"] = bot_name  
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
-        [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group")],
-        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
-    ]
-    
-    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-# --- Gruppe zur Whitelist hinzufügen ---
-async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
-    context.user_data["awaiting_group_add"] = True
-
-async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_group_add"):
-        bot_name = context.user_data["selected_bot"]
-        chat_id = update.message.text.strip()
-        column_name = f"allow_{bot_name}"
-
-        try:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-            conn.commit()
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
-        except sqlite3.IntegrityError:
-            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
-
-        context.user_data["awaiting_group_add"] = False
-
-# --- Gruppe aus der Whitelist entfernen ---
-async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du entfernen möchtest.")
-    context.user_data["awaiting_group_remove"] = True
-
-async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_group_remove"):
-        bot_name = context.user_data["selected_bot"]
-        chat_id = update.message.text.strip()
-        column_name = f"allow_{bot_name}"
-
-        cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
-        conn.commit()
-
-        if cursor.rowcount > 0:
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.")
-        else:
-            await update.message.reply_text(f"⚠️ Diese Gruppe existiert nicht für {bot_name}.")
-
-        context.user_data["awaiting_group_remove"] = False
-
-# --- Gruppen anzeigen ---
-async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name}"
-
-    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
-    groups = cursor.fetchall()
-
-    if groups:
-        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
-    else:
-        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
-
-    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
+    chat_id = query.message.chat_id
+    await query.message.edit_text(f"📌 Die Gruppen-ID ist: `{chat_id}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_menu")]
     ]))
+
+# --- Whitelist anzeigen ---
+async def show_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = query.message.chat_id
+
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
+    links = cursor.fetchall()
+
+    if links:
+        response = "📋 **Whitelist dieser Gruppe:**\n" + "\n".join(f"- {link[0]}" for link in links)
+    else:
+        response = "❌ Die Whitelist dieser Gruppe ist leer."
+
+    await query.message.edit_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_menu")]
+    ]))
+
+# --- Zurück zum Startmenü ---
+async def back_to_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await start(query.message, context)
+
+# --- Nachrichtenkontrolle ---
+async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+
+    # Prüfen, ob die Gruppe erlaubt ist
+    if not is_group_allowed(chat_id):
+        return  # Gruppe ist nicht erlaubt, Bot ignoriert die Nachricht
+
+    user = message.from_user
+    user_display_name = user.username if user.username else user.full_name
+    text = message.text or ""
+    print(f"📩 Nachricht empfangen von {user_display_name}: {text}")
+
+    # Nach Telegram-Gruppenlinks suchen
+    for match in TELEGRAM_LINK_PATTERN.finditer(text):
+        link = match.group(0)
+        print(f"🔗 Erkannter Telegram-Link: {link}")
+
+        # Wenn der Link nicht in der Whitelist der aktuellen Gruppe steht, Nachricht löschen
+        if not is_whitelisted(chat_id, link):
+            print(f"❌ Link nicht erlaubt und wird gelöscht: {link}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🚫 Hallo {user_display_name}, dein Link wurde automatisch gelöscht. "
+                     f"Bitte kontaktiere einen Admin, wenn du Fragen hast.",
+                reply_to_message_id=message.message_id
+            )
+            await context.bot.delete_message(chat_id, message.message_id)
+            return
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
+    global conn, cursor
+    conn, cursor = init_db()
+
     application = Application.builder().token(TOKEN).build()
 
+    # Befehle hinzufügen
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
-    application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
-    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
-    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
-    application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
-    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
+    # Inline-Menü Handler
+    application.add_handler(CallbackQueryHandler(show_menu, pattern="^show_menu$"))
+    application.add_handler(CallbackQueryHandler(show_group_id, pattern="^show_group_id$"))
+    application.add_handler(CallbackQueryHandler(show_whitelist, pattern="^show_whitelist$"))
+    application.add_handler(CallbackQueryHandler(back_to_start, pattern="^back_to_start$"))
 
-    print("🤖 Bot gestartet! Warte auf Befehle...")
+    # Nachrichten-Handler hinzufügen
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
+
+    print("🤖 Bot wird gestartet und überwacht Telegram-Gruppenlinks...")
     application.run_polling()
 
 if __name__ == "__main__":
