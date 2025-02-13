@@ -47,7 +47,7 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ Falsches Passwort. Versuch es erneut.")
 
-# --- Bot-Auswahl-Menü ---
+# --- Bot-Auswahl-Menü (erscheint nur nach Passwort) ---
 async def show_bot_selection(update: Update):
     keyboard = [
         [InlineKeyboardButton("🤖 sbot", callback_data="bot_sbot")],
@@ -98,7 +98,7 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_type = context.user_data.get("selected_bot")
 
     context.user_data["adding_group"] = bot_type
-    await query.message.edit_text("🆔 Sende mir die Gruppen-ID, die du hinzufügen möchtest.\n\n🔙 Zurück:", reply_markup=InlineKeyboardMarkup([
+    await query.message.edit_text("🆔 Sende mir die Gruppen-ID, die du hinzufügen möchtest.", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Abbrechen", callback_data=f"bot_{bot_type}")]
     ]))
 
