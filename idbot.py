@@ -39,8 +39,11 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bots = cursor.fetchall()
     conn.close()
 
-    keyboard = [[InlineKeyboardButton(bot[1], callback_data=f"bot_{bot[0]}")] for bot in bots]
-    keyboard.append([InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")])
+    if not bots:
+        keyboard = [[InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")]]
+    else:
+        keyboard = [[InlineKeyboardButton(bot[1], callback_data=f"bot_{bot[0]}")] for bot in bots]
+        keyboard.append([InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🤖 **Deine Bots:**", reply_markup=reply_markup)
@@ -48,7 +51,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Funktion zum Hinzufügen eines neuen Bots ---
 async def add_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Bitte sende mir den **Benutzernamen** des neuen Bots (`@sbot`).")
+    await query.message.edit_text("✍️ Bitte sende mir den **Benutzernamen** des neuen Bots (`@MeinBot`).")
     context.user_data["waiting_for_bot_name"] = True
 
 # --- Speichert den Bot-Namen und fragt nach dem Token ---
@@ -66,7 +69,7 @@ async def save_bot_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text("✍️ Jetzt bitte das **Bot-Token** senden.")
 
-# --- Speichert das Bot-Token in der Datenbank ---
+# --- Speichert das Bot-Token in die Datenbank ---
 async def save_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "waiting_for_bot_token" in context.user_data and context.user_data["waiting_for_bot_token"]:
         bot_token = update.message.text.strip()
