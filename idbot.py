@@ -6,15 +6,16 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
+DB_PATH = "/root/cpkiller/whitelist.db"
+
 def init_db():
-    conn = sqlite3.connect("whitelist.db", check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS allowed_groups (
             chat_id INTEGER PRIMARY KEY,
             allow_sbot INTEGER DEFAULT 0,
-            allow_idbot INTEGER DEFAULT 0,
-            allow_deletebot INTEGER DEFAULT 0
+            allow_idbot INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -35,7 +36,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Gruppen auflisten ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    cursor.execute("SELECT chat_id, allow_sbot, allow_idbot, allow_deletebot FROM allowed_groups")
+    cursor.execute("SELECT chat_id, allow_sbot, allow_idbot FROM allowed_groups")
     groups = cursor.fetchall()
 
     if not groups:
@@ -43,14 +44,12 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     response = "📋 **Erlaubte Gruppen:**\n"
-    for chat_id, allow_sbot, allow_idbot, allow_deletebot in groups:
+    for chat_id, allow_sbot, allow_idbot in groups:
         bots = []
         if allow_sbot:
             bots.append("🤖 sbot")
         if allow_idbot:
             bots.append("🆔 idbot")
-        if allow_deletebot:
-            bots.append("🗑 deletebot")
         response += f"- `{chat_id}` ({', '.join(bots)})\n"
 
     await query.message.edit_text(response, parse_mode="Markdown")
@@ -61,8 +60,7 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ sbot", callback_data="add_sbot"),
          InlineKeyboardButton("➕ idbot", callback_data="add_idbot")],
-        [InlineKeyboardButton("➕ deletebot", callback_data="add_deletebot")],
-        [InlineKeyboardButton("➕ Alle", callback_data="add_all")],
+        [InlineKeyboardButton("➕ Beide", callback_data="add_both")],
         [InlineKeyboardButton("🔙 Zurück", callback_data="start")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -115,16 +113,15 @@ async def receive_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_type = context.user_data["adding_bot"]
     chat_id = update.message.text.strip()
 
-    allow_sbot = 1 if bot_type in ["sbot", "all"] else 0
-    allow_idbot = 1 if bot_type in ["idbot", "all"] else 0
-    allow_deletebot = 1 if bot_type in ["deletebot", "all"] else 0
+    allow_sbot = 1 if bot_type in ["sbot", "both"] else 0
+    allow_idbot = 1 if bot_type in ["idbot", "both"] else 0
 
     try:
         cursor.execute("""
-            INSERT INTO allowed_groups (chat_id, allow_sbot, allow_idbot, allow_deletebot) 
-            VALUES (?, ?, ?, ?) 
-            ON CONFLICT(chat_id) DO UPDATE SET allow_sbot = ?, allow_idbot = ?, allow_deletebot = ?
-        """, (chat_id, allow_sbot, allow_idbot, allow_deletebot, allow_sbot, allow_idbot, allow_deletebot))
+            INSERT INTO allowed_groups (chat_id, allow_sbot, allow_idbot) 
+            VALUES (?, ?, ?) 
+            ON CONFLICT(chat_id) DO UPDATE SET allow_sbot = ?, allow_idbot = ?
+        """, (chat_id, allow_sbot, allow_idbot, allow_sbot, allow_idbot))
 
         conn.commit()
         await update.message.reply_text(f"✅ Gruppe `{chat_id}` wurde für `{bot_type}` hinzugefügt.", parse_mode="Markdown")
