@@ -75,7 +75,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe zur Whitelist hinzufügen ---
+# --- Gruppe zur Whitelist hinzufügen (mit Debugging) ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
@@ -89,25 +89,20 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logging.info(f"📌 Bot: {bot_name}, Spalte: {column_name}, Chat-ID: {chat_id}")  # Debugging
 
-        cursor.execute("PRAGMA table_info(allowed_groups);")
-        columns = [col[1] for col in cursor.fetchall()]
-
-        if column_name not in columns:
-            logging.error(f"❌ Fehler: Spalte {column_name} existiert nicht!")
-            await update.message.reply_text(f"⚠️ Fehler: Spalte {column_name} existiert nicht in der Datenbank.")
-            return
-
         try:
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
-            if cursor.rowcount == 0:
+            logging.info(f"🔄 UPDATE ausgeführt: {cursor.rowcount} Zeilen geändert.")
+
+            if cursor.rowcount == 0:  # Falls UPDATE nichts geändert hat, dann INSERT
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-            
+                logging.info(f"➕ INSERT ausgeführt für Chat-ID {chat_id} in {column_name}")
+
             conn.commit()
+            logging.info(f"✅ Änderungen gespeichert (commit).")
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
-            logging.info(f"✅ Gruppe {chat_id} erfolgreich eingetragen in {column_name}")
         except sqlite3.Error as e:
             await update.message.reply_text(f"⚠️ Fehler: {e}")
-            logging.error(f"❌ Fehler beim Einfügen: {e}")
+            logging.error(f"❌ SQL-Fehler: {e}")
 
         context.user_data["awaiting_group_add"] = False
 
