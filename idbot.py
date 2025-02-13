@@ -1,79 +1,121 @@
 import sqlite3
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- Telegram-Bot-Token ---
+# --- Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
+PASSWORD = "Shorty2306"
+
+# --- Logging aktivieren ---
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
-    conn = sqlite3.connect("whitelist.db", check_same_thread=False)
+    conn = sqlite3.connect("bot_manager.db", check_same_thread=False)
     cursor = conn.cursor()
+
+    # Tabelle für erlaubte Gruppen
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS allowed_groups (
             chat_id INTEGER PRIMARY KEY
         )
     """)
+
+    # Tabelle für Bots (Name + Token)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bots (
+            bot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            token TEXT UNIQUE
+        )
+    """)
+
     conn.commit()
-    print("✅ Datenbank erfolgreich initialisiert.")
     return conn, cursor
 
-# --- Befehl: /listids (Zeigt alle erlaubten Gruppen-IDs an) ---
-async def list_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cursor.execute("SELECT chat_id FROM allowed_groups")
-    ids = cursor.fetchall()
+conn, cursor = init_db()
 
-    if ids:
-        response = "📋 **Erlaubte Gruppen-IDs:**\n" + "\n".join(f"- `{id[0]}`" for id in ids)
+# --- Passwortabfrage beim Start ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Startet den Bot mit einer Passwortabfrage."""
+    await update.message.reply_text("🔒 Bitte gib das Passwort ein:")
+
+    return
+
+# --- Passwortprüfung ---
+async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Überprüft das Passwort."""
+    user_input = update.message.text.strip()
+    
+    if user_input == PASSWORD:
+        await show_main_menu(update, context)
     else:
-        response = "❌ Es sind derzeit keine Gruppen-IDs gespeichert."
+        await update.message.reply_text("❌ Falsches Passwort! Versuch es erneut.")
 
-    await update.message.reply_text(response, parse_mode="Markdown")
+# --- Hauptmenü anzeigen ---
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zeigt die Liste der Bots mit Buttons an."""
+    cursor.execute("SELECT bot_id, name FROM bots")
+    bots = cursor.fetchall()
 
-# --- Befehl: /addid <ID> (Fügt eine neue Gruppen-ID hinzu) ---
-async def add_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 1:
-        await update.message.reply_text("❌ Bitte gib eine gültige Gruppen-ID an. Beispiel: /addid -4794368721")
-        return
-
-    chat_id = context.args[0].strip()
-
-    try:
-        cursor.execute("INSERT INTO allowed_groups (chat_id) VALUES (?)", (chat_id,))
-        conn.commit()
-        await update.message.reply_text(f"✅ Die Gruppen-ID `{chat_id}` wurde erfolgreich hinzugefügt.")
-    except sqlite3.IntegrityError:
-        await update.message.reply_text("⚠️ Diese Gruppen-ID ist bereits gespeichert.")
-
-# --- Befehl: /delid <ID> (Löscht eine Gruppen-ID) ---
-async def delete_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 1:
-        await update.message.reply_text("❌ Bitte gib eine gültige Gruppen-ID an. Beispiel: /delid -4794368721")
-        return
-
-    chat_id = context.args[0].strip()
-
-    cursor.execute("DELETE FROM allowed_groups WHERE chat_id = ?", (chat_id,))
-    conn.commit()
-
-    if cursor.rowcount > 0:
-        await update.message.reply_text(f"✅ Die Gruppen-ID `{chat_id}` wurde erfolgreich gelöscht.")
+    if not bots:
+        keyboard = [[InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")]]
     else:
-        await update.message.reply_text(f"⚠️ Die Gruppen-ID `{chat_id}` wurde nicht gefunden.")
+        keyboard = [[InlineKeyboardButton(bot[1], callback_data=f"bot_{bot[0]}")] for bot in bots]
+        keyboard.append([InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🤖 **Deine Bots:**", reply_markup=reply_markup)
+
+# --- Bot-Details anzeigen ---
+async def show_bot_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Zeigt die Detailansicht eines Bots mit Optionen."""
+    query = update.callback_query
+    bot_id = query.data.split("_")[1]
+
+    cursor.execute("SELECT name FROM bots WHERE bot_id = ?", (bot_id,))
+    bot_name = cursor.fetchone()[0]
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data=f"add_group_{bot_id}")],
+        [InlineKeyboardButton("❌ Gruppe entfernen", callback_data=f"remove_group_{bot_id}")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="main_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.message.edit_text(f"⚙️ **Verwalte {bot_name}:**", reply_markup=reply_markup)
+
+# --- Zurück zum Hauptmenü ---
+async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kehrt zum Hauptmenü zurück."""
+    query = update.callback_query
+    await query.message.delete()
+    await show_main_menu(update, context)
+
+# --- Callback-Handler für Inline-Buttons ---
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Verarbeitet alle Inline-Button-Interaktionen."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "main_menu":
+        await back_to_main_menu(update, context)
+    elif query.data.startswith("bot_"):
+        await show_bot_details(update, context)
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
-    global conn, cursor
-    conn, cursor = init_db()
-
     application = Application.builder().token(TOKEN).build()
 
-    # Befehle hinzufügen
-    application.add_handler(CommandHandler("listids", list_ids))
-    application.add_handler(CommandHandler("addid", add_id))
-    application.add_handler(CommandHandler("delid", delete_id))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
+    application.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🤖 ID-Bot wird gestartet...")
+    logging.info("🤖 Bot-Manager gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
