@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # --- Telegram-Bot-Token ---
-TOKEN = "DEIN_TELEGRAM_BOT_TOKEN"
+TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
