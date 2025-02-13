@@ -1,57 +1,28 @@
 import sqlite3
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# --- Bot-Token ---
+# --- Bot-Token für den Admin-Bot ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 PASSWORD = "Shorty2306"
 
 # --- Logging aktivieren ---
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
-def init_db():
-    conn = sqlite3.connect("bot_manager.db", check_same_thread=False)
-    cursor = conn.cursor()
-
-    # Tabelle für erlaubte Gruppen
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS allowed_groups (
-            chat_id INTEGER PRIMARY KEY
-        )
-    """)
-
-    # Tabelle für Bots (Name + Token)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bots (
-            bot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE,
-            token TEXT UNIQUE
-        )
-    """)
-
-    conn.commit()
-    return conn, cursor
-
-conn, cursor = init_db()
+def connect_db():
+    return sqlite3.connect("/root/cpkiller/bot_manager.db", check_same_thread=False)
 
 # --- Passwortabfrage beim Start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Startet den Bot mit einer Passwortabfrage."""
     await update.message.reply_text("🔒 Bitte gib das Passwort ein:")
 
-    return
-
 # --- Passwortprüfung ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Überprüft das Passwort."""
-    user_input = update.message.text.strip()
-    
-    if user_input == PASSWORD:
+    if update.message.text.strip() == PASSWORD:
         await show_main_menu(update, context)
     else:
         await update.message.reply_text("❌ Falsches Passwort! Versuch es erneut.")
@@ -59,26 +30,29 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Hauptmenü anzeigen ---
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Zeigt die Liste der Bots mit Buttons an."""
+    conn = connect_db()
+    cursor = conn.cursor()
     cursor.execute("SELECT bot_id, name FROM bots")
     bots = cursor.fetchall()
+    conn.close()
 
-    if not bots:
-        keyboard = [[InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")]]
-    else:
-        keyboard = [[InlineKeyboardButton(bot[1], callback_data=f"bot_{bot[0]}")] for bot in bots]
-        keyboard.append([InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")])
+    keyboard = [[InlineKeyboardButton(bot[1], callback_data=f"bot_{bot[0]}")] for bot in bots]
+    keyboard.append([InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🤖 **Deine Bots:**", reply_markup=reply_markup)
 
 # --- Bot-Details anzeigen ---
 async def show_bot_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Zeigt die Detailansicht eines Bots mit Optionen."""
+    """Zeigt die Detailansicht eines Bots mit Gruppenverwaltung."""
     query = update.callback_query
     bot_id = query.data.split("_")[1]
 
+    conn = connect_db()
+    cursor = conn.cursor()
     cursor.execute("SELECT name FROM bots WHERE bot_id = ?", (bot_id,))
     bot_name = cursor.fetchone()[0]
+    conn.close()
 
     keyboard = [
         [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data=f"add_group_{bot_id}")],
@@ -91,14 +65,12 @@ async def show_bot_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Zurück zum Hauptmenü ---
 async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Kehrt zum Hauptmenü zurück."""
     query = update.callback_query
     await query.message.delete()
     await show_main_menu(update, context)
 
 # --- Callback-Handler für Inline-Buttons ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verarbeitet alle Inline-Button-Interaktionen."""
     query = update.callback_query
     await query.answer()
 
@@ -115,7 +87,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    logging.info("🤖 Bot-Manager gestartet...")
+    logging.info("🤖 ID-Bot gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
