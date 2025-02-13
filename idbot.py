@@ -1,6 +1,6 @@
 import sqlite3
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Logging für Debugging ---
@@ -48,10 +48,6 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
 
     bots = [col.replace("allow_", "") for col in columns]
-
-    logging.info(f"Gefundene Bot-Spalten: {columns}")
-    logging.info(f"Gefundene Bots: {bots}")
-
     if not bots:
         await query.reply_text("❌ Keine Bots gefunden!")
         return
@@ -59,19 +55,10 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    try:
-        if isinstance(query, Update):
-            await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-        elif isinstance(query, Message):
-            await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-        elif query and hasattr(query, "edit_message_text"):
-            await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-        else:
-            await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-
-        logging.info("✅ Menü erfolgreich gesendet!")
-    except Exception as e:
-        logging.error(f"❌ Fehler beim Senden des Menüs: {e}")
+    if isinstance(query, Update) or not hasattr(query, "edit_message_text"):
+        await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    else:
+        await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,6 +87,16 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
+        logging.info(f"📌 Bot: {bot_name}, Spalte: {column_name}, Chat-ID: {chat_id}")  # Debugging
+
+        cursor.execute("PRAGMA table_info(allowed_groups);")
+        columns = [col[1] for col in cursor.fetchall()]
+
+        if column_name not in columns:
+            logging.error(f"❌ Fehler: Spalte {column_name} existiert nicht!")
+            await update.message.reply_text(f"⚠️ Fehler: Spalte {column_name} existiert nicht in der Datenbank.")
+            return
+
         try:
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             if cursor.rowcount == 0:
@@ -107,10 +104,10 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             conn.commit()
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
-            logging.info(f"Gruppe {chat_id} zu {bot_name} hinzugefügt.")
+            logging.info(f"✅ Gruppe {chat_id} erfolgreich eingetragen in {column_name}")
         except sqlite3.Error as e:
             await update.message.reply_text(f"⚠️ Fehler: {e}")
-            logging.error(f"Fehler beim Einfügen: {e}")
+            logging.error(f"❌ Fehler beim Einfügen: {e}")
 
         context.user_data["awaiting_group_add"] = False
 
@@ -132,33 +129,16 @@ async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYP
 
             if cursor.rowcount > 0:
                 await update.message.reply_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.")
-                logging.info(f"Gruppe {chat_id} aus {bot_name} entfernt.")
+                logging.info(f"✅ Gruppe {chat_id} wurde erfolgreich aus {column_name} entfernt.")
             else:
                 await update.message.reply_text(f"⚠️ Diese Gruppe existiert nicht für {bot_name}.")
+                logging.warning(f"⚠️ Kein Eintrag für {chat_id} in {column_name} gefunden!")
 
         except sqlite3.Error as e:
             await update.message.reply_text(f"⚠️ Fehler: {e}")
-            logging.error(f"Fehler beim Löschen: {e}")
+            logging.error(f"❌ Fehler beim Löschen: {e}")
 
         context.user_data["awaiting_group_remove"] = False
-
-# --- Gruppen anzeigen ---
-async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name}"
-
-    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
-    groups = cursor.fetchall()
-
-    if groups:
-        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
-    else:
-        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
-
-    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
-    ]))
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
@@ -166,7 +146,16 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
+    application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
+    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
+    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
+    application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
+    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
+
+    print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
 
 if __name__ == "__main__":
