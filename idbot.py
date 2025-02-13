@@ -26,7 +26,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bots = [col.replace("allow_", "") for col in columns]
 
     if not bots:
-        await query.reply_text("❌ Keine Bots gefunden!")
+        await query.message.reply_text("❌ Keine Bots gefunden!")
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
@@ -65,13 +65,13 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         column_name = f"allow_{bot_name}"
 
         # **Fix: Sicherstellen, dass die Spalte existiert**
-        cursor.execute(f"PRAGMA table_info(allowed_groups);")
+        cursor.execute("PRAGMA table_info(allowed_groups);")
         columns = [col[1] for col in cursor.fetchall()]
         if column_name not in columns:
             await update.message.reply_text(f"⚠️ Fehler: Der Bot '{bot_name}' existiert nicht in der Datenbank.")
             return
 
-        # **Fix: Korrekte SQL-Abfrage zum Einfügen oder Aktualisieren**
+        # **Fix: Gruppen korrekt eintragen oder aktualisieren**
         cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1) "
                        f"ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1", (chat_id,))
         conn.commit()
