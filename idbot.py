@@ -1,113 +1,143 @@
 import sqlite3
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- Bot-Token für den Admin-Bot ---
-TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
-PASSWORD = "Shorty2306"
-
-# --- Logging aktivieren ---
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+# --- Telegram-Bot-Token ---
+TOKEN = "DEIN_TELEGRAM_BOT_TOKEN"
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
-def connect_db():
-    return sqlite3.connect("/root/cpkiller/bot_manager.db", check_same_thread=False)
-
-# --- Passwortabfrage beim Start ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Startet den Bot mit einer Passwortabfrage."""
-    context.user_data["waiting_for_password"] = True
-    await update.message.reply_text("🔒 Bitte gib das Passwort ein:")
-
-# --- Passwortprüfung ---
-async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Überprüft das Passwort."""
-    if "waiting_for_password" in context.user_data and context.user_data["waiting_for_password"]:
-        if update.message.text.strip() == PASSWORD:
-            context.user_data["waiting_for_password"] = False
-            await show_main_menu(update, context)
-        else:
-            await update.message.reply_text("❌ Falsches Passwort! Versuch es erneut.")
-
-# --- Hauptmenü anzeigen ---
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Zeigt die Liste der Bots mit Buttons an."""
-    conn = connect_db()
+def init_db():
+    conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
-    cursor.execute("SELECT bot_id, name FROM bots")
-    bots = cursor.fetchall()
-    conn.close()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS allowed_groups (
+            chat_id INTEGER PRIMARY KEY,
+            allow_sbot INTEGER DEFAULT 0,
+            allow_idbot INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    return conn, cursor
 
-    if not bots:
-        keyboard = [[InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")]]
-    else:
-        keyboard = [[InlineKeyboardButton(bot[1], callback_data=f"bot_{bot[0]}")] for bot in bots]
-        keyboard.append([InlineKeyboardButton("➕ Bot hinzufügen", callback_data="add_bot")])
+conn, cursor = init_db()
 
+# --- Startbefehl mit Inline-Buttons ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📋 Erlaubte Gruppen anzeigen", callback_data="list_groups")],
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group"),
+         InlineKeyboardButton("❌ Gruppe entfernen", callback_data="remove_group")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🤖 **Deine Bots:**", reply_markup=reply_markup)
+    await update.message.reply_text("🔧 Verwaltungsmenü:", reply_markup=reply_markup)
 
-# --- Funktion zum Hinzufügen eines neuen Bots ---
-async def add_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Gruppen auflisten ---
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Bitte sende mir den **Benutzernamen** des neuen Bots (`@MeinBot`).")
-    context.user_data["waiting_for_bot_name"] = True
+    cursor.execute("SELECT chat_id, allow_sbot, allow_idbot FROM allowed_groups")
+    groups = cursor.fetchall()
 
-# --- Speichert den Bot-Namen und fragt nach dem Token ---
-async def save_bot_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "waiting_for_bot_name" in context.user_data and context.user_data["waiting_for_bot_name"]:
-        bot_name = update.message.text.strip()
+    if not groups:
+        await query.answer("❌ Keine erlaubten Gruppen!")
+        return
 
-        if not bot_name.startswith("@"):
-            await update.message.reply_text("❌ Der Bot-Name muss mit `@` beginnen!")
-            return
+    response = "📋 **Erlaubte Gruppen:**\n"
+    for chat_id, allow_sbot, allow_idbot in groups:
+        bots = []
+        if allow_sbot:
+            bots.append("🤖 sbot")
+        if allow_idbot:
+            bots.append("🆔 idbot")
+        response += f"- `{chat_id}` ({', '.join(bots)})\n"
 
-        context.user_data["new_bot_name"] = bot_name
-        context.user_data["waiting_for_bot_name"] = False
-        context.user_data["waiting_for_bot_token"] = True
+    await query.message.edit_text(response, parse_mode="Markdown")
 
-        await update.message.reply_text("✍️ Jetzt bitte das **Bot-Token** senden.")
-
-# --- Speichert das Bot-Token in die Datenbank ---
-async def save_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "waiting_for_bot_token" in context.user_data and context.user_data["waiting_for_bot_token"]:
-        bot_token = update.message.text.strip()
-        bot_name = context.user_data["new_bot_name"]
-
-        conn = connect_db()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("INSERT INTO bots (name, token) VALUES (?, ?)", (bot_name, bot_token))
-            conn.commit()
-            await update.message.reply_text(f"✅ Der Bot `{bot_name}` wurde erfolgreich hinzugefügt!")
-        except sqlite3.IntegrityError:
-            await update.message.reply_text("⚠️ Ein Bot mit diesem Namen oder Token existiert bereits!")
-        conn.close()
-
-        # Reset des Status
-        context.user_data["waiting_for_bot_token"] = False
-        context.user_data.pop("new_bot_name", None)
-
-# --- Callback-Handler für Inline-Buttons ---
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Gruppe hinzufügen ---
+async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    keyboard = [
+        [InlineKeyboardButton("➕ sbot", callback_data="add_sbot"),
+         InlineKeyboardButton("➕ idbot", callback_data="add_idbot")],
+        [InlineKeyboardButton("➕ Beide", callback_data="add_both")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="start")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.edit_text("🔹 Wähle den Bot, den du einer Gruppe hinzufügen möchtest:", reply_markup=reply_markup)
 
-    if query.data == "add_bot":
-        await add_bot(update, context)
+# --- Gruppe entfernen ---
+async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    cursor.execute("SELECT chat_id FROM allowed_groups")
+    groups = cursor.fetchall()
 
-# --- Hauptfunktion zum Starten des Bots ---
+    if not groups:
+        await query.answer("❌ Keine erlaubten Gruppen zum Entfernen!")
+        return
+
+    keyboard = [
+        [InlineKeyboardButton(f"❌ {chat_id}", callback_data=f"remove_{chat_id}")] for (chat_id,) in groups
+    ]
+    keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="start")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.edit_text("🔻 Wähle die Gruppe, die du entfernen möchtest:", reply_markup=reply_markup)
+
+# --- Callback für Gruppenänderungen ---
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    action = query.data
+
+    if action == "list_groups":
+        await list_groups(update, context)
+    elif action == "add_group":
+        await add_group(update, context)
+    elif action == "remove_group":
+        await remove_group(update, context)
+    elif action.startswith("add_"):
+        bot_type = action.split("_")[1]
+        context.user_data["adding_bot"] = bot_type
+        await query.message.edit_text("🆔 Sende mir die Gruppen-ID, die du hinzufügen möchtest.")
+    elif action.startswith("remove_"):
+        chat_id = action.split("_")[1]
+        cursor.execute("DELETE FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+        conn.commit()
+        await query.answer("✅ Gruppe entfernt!")
+        await remove_group(update, context)
+
+# --- Verarbeitet die gesendete Gruppen-ID ---
+async def receive_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "adding_bot" not in context.user_data:
+        return
+
+    bot_type = context.user_data["adding_bot"]
+    chat_id = update.message.text.strip()
+
+    allow_sbot = 1 if bot_type in ["sbot", "both"] else 0
+    allow_idbot = 1 if bot_type in ["idbot", "both"] else 0
+
+    try:
+        cursor.execute("""
+            INSERT INTO allowed_groups (chat_id, allow_sbot, allow_idbot) 
+            VALUES (?, ?, ?) 
+            ON CONFLICT(chat_id) DO UPDATE SET allow_sbot = ?, allow_idbot = ?
+        """, (chat_id, allow_sbot, allow_idbot, allow_sbot, allow_idbot))
+
+        conn.commit()
+        await update.message.reply_text(f"✅ Gruppe `{chat_id}` wurde für `{bot_type}` hinzugefügt.", parse_mode="Markdown")
+
+    except sqlite3.IntegrityError:
+        await update.message.reply_text("⚠️ Diese Gruppen-ID ist bereits gespeichert.")
+
+    del context.user_data["adding_bot"]
+
+# --- Hauptfunktion ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_bot_name))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_bot_token))
-    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_group_id))
 
-    logging.info("🤖 ID-Bot gestartet...")
+    print("🤖 ID-Bot mit Inline-Menü gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
