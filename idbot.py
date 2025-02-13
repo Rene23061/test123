@@ -5,9 +5,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
-# --- Passwort für Admin-Zugang ---
-ADMIN_PASSWORD = "Shorty2306"
-
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
@@ -16,26 +13,9 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- /start-Befehl mit Passwortabfrage ---
+# --- /start-Befehl: Direkt Bot-Menü anzeigen ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🔑 Zugang erhalten", callback_data="enter_password")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🔒 Bitte bestätige dein Passwort, um fortzufahren:", reply_markup=reply_markup)
-
-# --- Passwort-Eingabe ---
-async def enter_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.message.edit_text("🔑 Bitte sende dein Passwort als Nachricht.")
-    context.user_data["awaiting_password"] = True
-
-async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_password"):
-        if update.message.text == ADMIN_PASSWORD:
-            context.user_data["authenticated"] = True
-            await show_bots(update, context)  # Direkt zu den Bots weiterleiten
-        else:
-            await update.message.reply_text("❌ Falsches Passwort! Bitte versuche es erneut.")
-        context.user_data["awaiting_password"] = False
+    await show_bots(update, context)
 
 # --- Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,7 +29,6 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
-    keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back_to_start")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
@@ -58,7 +37,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_name = query.data.replace("manage_bot_", "")
-    context.user_data["selected_bot"] = bot_name  # Gewählten Bot speichern
+    context.user_data["selected_bot"] = bot_name  
 
     keyboard = [
         [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
@@ -135,11 +114,9 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
-    application.add_handler(CallbackQueryHandler(enter_password, pattern="^enter_password$"))
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
