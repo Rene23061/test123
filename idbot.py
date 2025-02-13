@@ -26,20 +26,21 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Startmenü mit Passwortschutz ---
+# --- Startmenü ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
+    keyboard = [[InlineKeyboardButton("🔧 Verwaltung starten", callback_data="enter_password")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Willkommen! Wähle eine Aktion:", reply_markup=reply_markup)
 
-    # Prüfen, ob der Nutzer bereits eingeloggt ist
-    if context.user_data.get("authenticated"):
-        await show_bot_selection(update)
-    else:
-        context.user_data["awaiting_password"] = True
-        await update.message.reply_text("🔐 Bitte gib das Passwort ein:")
+# --- Passwort-Abfrage starten ---
+async def ask_for_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    context.user_data["awaiting_password"] = True
+    await query.message.edit_text("🔐 Bitte gib das Passwort ein:")
 
 # --- Passwort-Eingabe prüfen ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "awaiting_password" in context.user_data:
+    if context.user_data.get("awaiting_password"):
         if update.message.text == PASSWORD:
             context.user_data["authenticated"] = True
             del context.user_data["awaiting_password"]
@@ -47,14 +48,15 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ Falsches Passwort. Versuch es erneut.")
 
-# --- Bot-Auswahl-Menü (erscheint nur nach Passwort) ---
+# --- Bot-Auswahl-Menü (erscheint erst nach Passwort) ---
 async def show_bot_selection(update: Update):
     keyboard = [
         [InlineKeyboardButton("🤖 sbot", callback_data="bot_sbot")],
-        [InlineKeyboardButton("🛡 cpbot", callback_data="bot_cpbot")]
+        [InlineKeyboardButton("🛡 cpbot", callback_data="bot_cpbot")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_start")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     if update.message:
         await update.message.reply_text("🔧 Wähle einen Bot:", reply_markup=reply_markup)
     else:
@@ -63,7 +65,7 @@ async def show_bot_selection(update: Update):
 # --- Menü für sbot oder cpbot ---
 async def show_bot_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    bot_type = query.data.split("_")[1]  # sbot oder cpbot
+    bot_type = query.data.split("_")[1]
     context.user_data["selected_bot"] = bot_type  
 
     keyboard = [
@@ -151,7 +153,11 @@ async def receive_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     del context.user_data["adding_group"]
 
-# --- Zurück zum Bot-Menü ---
+# --- Zurück zum Startmenü ---
+async def back_to_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start(update, context)
+
+# --- Zurück zur Bot-Auswahl ---
 async def back_to_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_bot_selection(update)
 
@@ -160,15 +166,17 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(ask_for_password, pattern="^enter_password$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     application.add_handler(CallbackQueryHandler(show_bot_menu, pattern="^bot_"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
+    application.add_handler(CallbackQueryHandler(back_to_start, pattern="^back_to_start$"))
     application.add_handler(CallbackQueryHandler(back_to_bots, pattern="^back_to_bots$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_group_id))
 
-    print("🤖 ID-Bot mit Passwort gestartet...")
+    print("🤖 ID-Bot mit Passwortschutz gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
