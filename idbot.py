@@ -3,7 +3,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Logging nur für Datenbank-Fehler ---
+# --- Logging für Debugging (nur Datenbank-Fehler) ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)  # HTTP-Logs deaktivieren
 logging.getLogger("telegram").setLevel(logging.WARNING)
@@ -22,7 +22,7 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- DEBUG-Funktion für Datei-Logging ---
+# --- DEBUG-Log-Funktion ---
 def debug_log(message):
     try:
         with open("debug_log.txt", "a") as debug_file:
@@ -39,7 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Passwortprüfung (nur nach /start) ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_password"):
-        return  # Ignoriert andere Eingaben als Passwort
+        return  # Ignoriert andere Eingaben
 
     debug_log(f"🔑 Passwortprüfung gestartet mit Eingabe: {update.message.text}")
 
@@ -47,7 +47,8 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.")
         context.user_data["authenticated"] = True
         context.user_data["awaiting_password"] = False
-        await show_bots(update, context)  # Direkter Übergang zum Bot-Menü
+        context.user_data.pop("awaiting_password", None)  # **Passwortprüfung deaktivieren**
+        await show_bots(update, context)  
     else:
         await update.message.reply_text("❌ Falsches Passwort! Zugriff verweigert.")
         context.user_data["awaiting_password"] = False
@@ -159,8 +160,12 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(f"^{PASSWORD}$"), check_password))  # FIXED ✅
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^-?[0-9]+$"), process_add_group))  # FIXED ✅
+    
+    # **FIXED: Passwort-Filter nur nach /start aktiv**
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(f"^{PASSWORD}$"), check_password))  
+
+    # **Gruppen-ID-Filter nur wenn erwartet**
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^-?[0-9]+$"), process_add_group))  
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
