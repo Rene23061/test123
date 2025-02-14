@@ -22,13 +22,20 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- DEBUG-Funktion ---
+# --- DEBUG-Funktion: Erzwingt das Schreiben in die Log-Datei ---
 def debug_log(message):
     try:
         with open("debug_log.txt", "a") as debug_file:
             debug_file.write(f"{message}\n")
     except Exception as e:
-        print(f"❌ Fehler beim Schreiben in debug_log.txt: {e}")
+        print(f"❌ KANN NICHT SCHREIBEN: {e}")
+
+# 🔍 **TEST: Prüfen, ob Logs geschrieben werden können**
+try:
+    with open("debug_log.txt", "a") as debug_file:
+        debug_file.write("🔍 DEBUG-TEST: Log-Datei wurde erfolgreich geöffnet!\n")
+except Exception as e:
+    print(f"❌ KANN NICHT SCHREIBEN: {e}")
 
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,6 +107,8 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     debug_log(f"🔍 process_add_group() gestartet: {chat_id} → {column_name}")
 
+    await update.message.reply_text(f"✅ TEST: `process_add_group()` wurde AUFGERUFEN mit ID {chat_id}")
+
     if not bot_name:
         await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
         return
@@ -126,26 +135,6 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["awaiting_group_add"] = False
 
-# --- Gruppen anzeigen ---
-async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name}"
-
-    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
-    groups = cursor.fetchall()
-    
-    debug_log(f"📌 list_groups() aufgerufen für {bot_name}: {groups}")
-
-    if groups:
-        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
-    else:
-        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
-
-    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
-    ]))
-
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     application = Application.builder().token(TOKEN).build()
@@ -157,7 +146,6 @@ def main():
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
-    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
