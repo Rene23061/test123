@@ -20,6 +20,7 @@ conn, cursor = init_db()
 def log_message(message):
     with open("debug_log.txt", "a") as log_file:
         log_file.write(message + "\n")
+    print(message)  # Auch in die Konsole ausgeben für Live-Debugging
 
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,7 +98,16 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_message(f"📝 Eintragen: {chat_id} → {column_name}")
 
         try:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1) ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1", (chat_id,))
+            # Vor Einfügen prüfen, ob die ID bereits existiert
+            cursor.execute("SELECT * FROM allowed_groups WHERE chat_id=?", (chat_id,))
+            existing_data = cursor.fetchone()
+            log_message(f"🔍 Vorheriger Eintrag: {existing_data}")
+
+            cursor.execute(f"""
+                INSERT INTO allowed_groups (chat_id, {column_name}) 
+                VALUES (?, 1) 
+                ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1
+            """, (chat_id,))
             conn.commit()
 
             # Überprüfe direkt nach dem Einfügen, ob die Änderung vorhanden ist
@@ -109,37 +119,11 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
             else:
                 await update.message.reply_text(f"⚠️ Fehler beim Einfügen von {chat_id} in {bot_name}.")
-        except sqlite3.IntegrityError as e:
+        except sqlite3.Error as e:
             log_message(f"⚠️ SQLite-Fehler: {e}")
-            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
+            await update.message.reply_text(f"⚠️ Fehler in der Datenbank: {e}")
 
         context.user_data["awaiting_group_add"] = False
-
-# --- Gruppen anzeigen ---
-async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = context.user_data.get("selected_bot")
-
-    if not bot_name:
-        await query.answer("Fehler: Kein Bot ausgewählt!")
-        return
-
-    column_name = f"allow_{bot_name}"
-    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
-    groups = cursor.fetchall()
-
-    log_message(f"🔎 DEBUG: Gruppenabfrage für {bot_name}: {groups}")
-
-    if groups:
-        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
-    else:
-        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
-
-    log_message(f"✅ Antwort an User: {response}")
-
-    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
-    ]))
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
@@ -152,7 +136,6 @@ def main():
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
-    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     log_message("🚀 Bot wurde gestartet und alle Handlers wurden gesetzt!")
     application.run_polling()
