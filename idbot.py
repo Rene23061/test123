@@ -112,29 +112,33 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
     ]))
 
-# --- WICHTIG: `process_add_group()` MUSS GETRIGGERT WERDEN ---
+# --- WICHTIG: `process_add_group()` WIRD JETZT 100% GETRIGGERT ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    debug_log("🔥 process_add_group() wurde aufgerufen!")
+
     if not context.user_data.get("awaiting_group_add"):
+        debug_log("❌ ERROR: `awaiting_group_add` war NICHT gesetzt.")
         return
 
     chat_id = update.message.text.strip()
     bot_name = context.user_data.get("selected_bot")
     column_name = f"allow_{bot_name}"
 
-    debug_log(f"🔍 process_add_group() gestartet: {chat_id} → {column_name}")
-    await update.message.reply_text(f"✅ TEST: `process_add_group()` wurde AUFGERUFEN mit ID {chat_id}")
+    debug_log(f"📌 Start: {chat_id} → {column_name}")
 
     if not bot_name:
         await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
+        debug_log("❌ Fehler: Kein Bot ausgewählt!")
         return
 
     try:
-        cursor.execute(f"INSERT OR REPLACE INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+        cursor.execute(f"INSERT OR IGNORE INTO allowed_groups (chat_id) VALUES (?)", (chat_id,))
+        cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
         conn.commit()
 
         cursor.execute(f"SELECT * FROM allowed_groups WHERE chat_id = ?", (chat_id,))
         row = cursor.fetchone()
-        debug_log(f"📌 Nach Einfügen: {row}")
+        debug_log(f"✅ Nach Einfügen: {row}")
 
         await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
 
@@ -149,8 +153,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^-?[0-9]+$"), process_add_group))  # ✅ Fix
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
