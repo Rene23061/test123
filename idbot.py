@@ -1,10 +1,13 @@
 import sqlite3
 import logging
+import sys
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Logging für Debugging (Nur Datenbank-relevante Logs) ---
+# --- Logging für NUR Datenbank, keine HTTP-Logs ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # Versteckt HTTP-Logs von python-telegram-bot
+logging.getLogger("telegram").setLevel(logging.WARNING)  # Versteckt Telegram-Bibliotheks-Logs
 
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
@@ -78,7 +81,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe zur Whitelist hinzufügen ---
+# --- Gruppe zur Whitelist hinzufügen (Nur DB-Logs) ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
@@ -94,9 +97,9 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             if cursor.rowcount == 0:  
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-                logging.info(f"➕ Neue Gruppe eingetragen: {chat_id} in {column_name}")
+                logging.info(f"✅ Neue Gruppe eingetragen: {chat_id} in {column_name}")
             else:
-                logging.info(f"🔄 Bestehende Gruppe aktualisiert: {chat_id} in {column_name}")
+                logging.info(f"✅ Bestehende Gruppe aktualisiert: {chat_id} in {column_name}")
 
             conn.commit()
             logging.info(f"✅ Datenbank gespeichert: {chat_id} in {column_name}")
