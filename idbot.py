@@ -5,6 +5,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 # --- Logging für NUR Datenbank-Fehler, kein HTTP-Log-Spam ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # Deaktiviert HTTP-Logs
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
@@ -59,20 +61,6 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
-# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
-async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = query.data.replace("manage_bot_", "")
-    context.user_data["selected_bot"] = bot_name  
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
-        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
-    ]
-    
-    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
-
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -86,15 +74,15 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         column_name = f"allow_{bot_name}"
 
         try:
-            # Erst versuchen, ein UPDATE durchzuführen
+            logging.info(f"📌 SQL-UPDATE Versuch: {column_name} auf 1 setzen für chat_id={chat_id}")
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             
             if cursor.rowcount == 0:  
-                # Falls kein UPDATE möglich war, INSERT ausführen
+                logging.info(f"⚠️ Kein UPDATE möglich. Versuche INSERT für chat_id={chat_id}")
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-                logging.info(f"➕ Neue Gruppe eingetragen: {chat_id} für {bot_name}")
+                logging.info(f"✅ INSERT erfolgreich für chat_id={chat_id}")
             else:
-                logging.info(f"🔄 Bestehende Gruppe aktualisiert: {chat_id} für {bot_name}")
+                logging.info(f"✅ UPDATE erfolgreich für chat_id={chat_id}")
 
             conn.commit()
             logging.info(f"✅ Datenbank gespeichert: {chat_id} in {column_name}")
@@ -133,7 +121,6 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
-    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
