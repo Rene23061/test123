@@ -102,6 +102,38 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["awaiting_group_add"] = False
 
+# --- Gruppe aus der Whitelist entfernen ---
+async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du entfernen möchtest.")
+    context.user_data["awaiting_group_remove"] = True
+    log_message("🔎 remove_group() wurde aufgerufen.")
+
+async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_group_remove"):
+        bot_name = context.user_data["selected_bot"]
+        chat_id = update.message.text.strip()
+        column_name = f"allow_{bot_name}"
+
+        log_message(f"🗑️ Entfernen: {chat_id} → {column_name}")
+
+        cursor.execute(f"UPDATE allowed_groups SET {column_name} = 0 WHERE chat_id = ?", (chat_id,))
+        conn.commit()
+
+        cursor.execute(f"SELECT {column_name} FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+        updated_data = cursor.fetchone()
+
+        if updated_data and updated_data[0] == 0:
+            log_message(f"✅ Nach Entfernen in DB: {updated_data}")
+            keyboard = [[InlineKeyboardButton("🔙 Zurück zur Verwaltung", callback_data=f"manage_bot_{bot_name}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.", reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(f"⚠️ Diese Gruppe existiert nicht oder war nicht eingetragen.")
+
+        context.user_data["awaiting_group_remove"] = False
+
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -128,10 +160,12 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
+    application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     log_message("🚀 Bot wurde gestartet!")
