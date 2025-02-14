@@ -9,130 +9,149 @@ TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS admins (user_id INTEGER PRIMARY KEY)")
-    cursor.execute("CREATE TABLE IF NOT EXISTS allowed_groups (chat_id INTEGER PRIMARY KEY, owner_id INTEGER)")
-    conn.commit()
     return conn, cursor
 
 conn, cursor = init_db()
 
-# --- Admins und Gruppen aus der Datenbank laden ---
-def get_admins():
-    cursor.execute("SELECT user_id FROM admins")
-    return {row[0] for row in cursor.fetchall()}
-
-def get_allowed_groups():
-    cursor.execute("SELECT chat_id FROM allowed_groups")
-    return {row[0] for row in cursor.fetchall()}
-
-AUTHORIZED_USERS = get_admins()
-AUTHORIZED_GROUPS = get_allowed_groups()
-
-# --- Funktion zum Prüfen, ob Benutzer Admin ist ---
-def is_admin(update: Update):
-    return update.message.from_user.id in AUTHORIZED_USERS
-
-# --- Funktion zum Prüfen, ob der Benutzer Gruppeninhaber ist ---
-def is_group_owner(update: Update):
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
-    cursor.execute("SELECT owner_id FROM allowed_groups WHERE chat_id = ?", (chat_id,))
-    result = cursor.fetchone()
-    return result and result[0] == user_id
-
-# --- Funktion zum Prüfen, ob der Chat erlaubt ist ---
-def is_group_allowed(update: Update):
-    return update.message.chat_id in AUTHORIZED_GROUPS
-
 # --- /start-Befehl ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
+    await update.message.reply_text("🤖 Willkommen! Wähle eine Aktion:", reply_markup=main_menu())
 
-    # Falls die Gruppe nicht erlaubt ist, prüfe, ob der Benutzer der Gruppeninhaber ist
-    if chat_id not in AUTHORIZED_GROUPS:
-        cursor.execute("INSERT OR IGNORE INTO allowed_groups (chat_id, owner_id) VALUES (?, ?)", (chat_id, user_id))
-        conn.commit()
-        AUTHORIZED_GROUPS.add(chat_id)
-        await update.message.reply_text("✅ Deine Gruppe wurde hinzugefügt! Du bist der Gruppeninhaber.")
+# --- Hauptmenü ---
+def main_menu():
+    keyboard = [[InlineKeyboardButton("🔧 Bot verwalten", callback_data="show_bots")]]
+    return InlineKeyboardMarkup(keyboard)
 
-    await show_bots(update, context)
-
-# --- Admins verwalten ---
-async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await update.message.reply_text("🚫 Zugriff verweigert! Nur Admins dürfen neue Admins hinzufügen.")
-        return
-
-    try:
-        new_admin_id = int(update.message.text.split()[-1])
-        cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (new_admin_id,))
-        conn.commit()
-        AUTHORIZED_USERS.add(new_admin_id)
-        await update.message.reply_text(f"✅ Admin {new_admin_id} wurde hinzugefügt.")
-    except ValueError:
-        await update.message.reply_text("⚠️ Ungültige Eingabe! Verwende: /addadmin [Telegram-ID]")
-
-async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update):
-        await update.message.reply_text("🚫 Zugriff verweigert! Nur Admins dürfen Admins entfernen.")
-        return
-
-    try:
-        remove_admin_id = int(update.message.text.split()[-1])
-        cursor.execute("DELETE FROM admins WHERE user_id = ?", (remove_admin_id,))
-        conn.commit()
-        AUTHORIZED_USERS.discard(remove_admin_id)
-        await update.message.reply_text(f"✅ Admin {remove_admin_id} wurde entfernt.")
-    except ValueError:
-        await update.message.reply_text("⚠️ Ungültige Eingabe! Verwende: /removeadmin [Telegram-ID]")
-
-# --- Gruppen verwalten (nur Admins oder Gruppeninhaber) ---
-async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
-
-    if not (is_admin(update) or is_group_owner(update)):
-        await update.message.reply_text("🚫 Zugriff verweigert! Nur Admins oder der Gruppeninhaber dürfen Gruppen entfernen.")
-        return
-
-    cursor.execute("DELETE FROM allowed_groups WHERE chat_id = ?", (chat_id,))
-    conn.commit()
-    AUTHORIZED_GROUPS.discard(chat_id)
-    await update.message.reply_text("✅ Die Gruppe wurde entfernt.")
-
-# --- Alle Bots anzeigen ---
+# --- Alle Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_group_allowed(update):
-        await update.message.reply_text("🚫 Zugriff verweigert! Deine Gruppe ist nicht autorisiert.")
-        return
-
-    query = update.callback_query if update.callback_query else update.message
+    query = update.callback_query
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
 
     bots = [col.replace("allow_", "") for col in columns]
     if not bots:
-        await query.reply_text("❌ Keine Bots gefunden!")
+        await query.message.edit_text("❌ Keine Bots gefunden!")
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="main_menu")])
+    
+    await query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+# --- Bot-Verwaltungsmenü ---
+async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = query.data.replace("manage_bot_", "")
+    context.user_data["selected_bot"] = bot_name  
 
-# --- Bot starten ---
+    keyboard = [
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
+        [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group")],
+        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
+    ]
+    
+    await query.message.edit_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# --- Gruppe zur Whitelist hinzufügen ---
+async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
+    context.user_data["awaiting_group_add"] = True
+
+async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_group_add"):
+        bot_name = context.user_data["selected_bot"]
+        chat_id = update.message.text.strip()
+        column_name = f"allow_{bot_name}"
+
+        try:
+            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+            conn.commit()
+            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+        except sqlite3.IntegrityError:
+            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
+
+        context.user_data["awaiting_group_add"] = False
+
+# --- Gruppe aus der Whitelist entfernen ---
+async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
+
+    if not groups:
+        await query.message.edit_text(f"❌ Keine Gruppen für {bot_name} eingetragen.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+        return
+
+    keyboard = [[InlineKeyboardButton(str(group[0]), callback_data=f"confirm_remove_{group[0]}")] for group in groups]
+    keyboard.append([InlineKeyboardButton("🔙 Abbrechen", callback_data=f"manage_bot_{bot_name}")])
+    await query.message.edit_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# --- **Sicherheitsabfrage: Bestätigung vor dem Löschen** ---
+async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = query.data.replace("confirm_remove_", "")
+    bot_name = context.user_data["selected_bot"]
+    context.user_data["delete_group_id"] = chat_id  # Speichert die Gruppen-ID für Bestätigung
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Ja, löschen", callback_data="delete_group_confirmed")],
+        [InlineKeyboardButton("❌ Nein, abbrechen", callback_data=f"manage_bot_{bot_name}")]
+    ]
+    
+    await query.message.edit_text(f"⚠️ **Bist du sicher, dass du die Gruppe {chat_id} löschen möchtest?**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# --- **Löschen der Gruppe nach Bestätigung** ---
+async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = context.user_data.get("delete_group_id")  # Holt die gespeicherte Gruppen-ID
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    if chat_id:
+        cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
+        conn.commit()
+
+        await query.message.edit_text(f"✅ Gruppe {chat_id} wurde erfolgreich aus {bot_name} entfernt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+    else:
+        await query.message.edit_text("⚠️ Fehler: Keine gültige Gruppen-ID gefunden.")
+
+# --- Gruppen anzeigen ---
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
+
+    if groups:
+        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
+    else:
+        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
+
+    await query.message.edit_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+
+# --- Hauptfunktion zum Starten des Bots ---
 def main():
     application = Application.builder().token(TOKEN).build()
-    
+
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("addadmin", add_admin))
-    application.add_handler(CommandHandler("removeadmin", remove_admin))
-    application.add_handler(CommandHandler("removegroup", remove_group))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
+    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
+    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
+    application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
+    application.add_handler(CallbackQueryHandler(confirm_remove, pattern="^confirm_remove_.*"))
+    application.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group_confirmed$"))
+    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
-    print("🤖 Bot gestartet!")
+    print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
 
 if __name__ == "__main__":
