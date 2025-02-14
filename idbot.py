@@ -16,43 +16,17 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- /start-Befehl mit Passwortabfrage ---
+# --- /start-Befehl ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("authenticated"):  
-        await update.message.reply_text("🔓 Du bist bereits angemeldet!", reply_markup=main_menu())
-        return
-
-    await update.message.reply_text("🔐 Bitte gib das Passwort ein, um Zugriff zu erhalten:")
-    context.user_data["awaiting_password"] = True  
-
-# --- Passwortprüfung ---
-async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_password"):
-        if update.message.text == PASSWORD:
-            context.user_data["authenticated"] = True
-            context.user_data["awaiting_password"] = False
-            await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.", reply_markup=main_menu())
-        else:
-            await update.message.reply_text("❌ Falsches Passwort! Bitte starte erneut mit /start.")
-            context.user_data["awaiting_password"] = False
+    await update.message.reply_text("🤖 Willkommen! Wähle eine Option:", reply_markup=main_menu())
 
 # --- Hauptmenü ---
 def main_menu():
     keyboard = [[InlineKeyboardButton("🔧 Bot verwalten", callback_data="show_bots")]]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Zugriffskontrolle ---
-async def access_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("authenticated"):
-        await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das Passwort ein.")
-        return False
-    return True
-
-# --- Alle Bots aus der Datenbank anzeigen ---
+# --- Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await access_control(update, context):
-        return
-    
     query = update.callback_query
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
@@ -74,20 +48,30 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_bot"] = bot_name  
 
     keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
-        [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group")],
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group_password")],
+        [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group_password")],
         [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
         [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
     ]
     
     await query.message.edit_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe hinzufügen ---
-async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Passwortabfrage vor dem Hinzufügen ---
+async def add_group_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
-    context.user_data["awaiting_group_add"] = True
+    await query.message.edit_text("🔐 Bitte gib das Passwort ein, um eine Gruppe hinzuzufügen:")
+    context.user_data["awaiting_password_add"] = True
 
+async def check_password_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_password_add"):
+        if update.message.text == PASSWORD:
+            context.user_data["awaiting_password_add"] = False
+            await update.message.reply_text("✅ Passwort korrekt! Bitte sende nun die Gruppen-ID.")
+            context.user_data["awaiting_group_add"] = True
+        else:
+            await update.message.reply_text("❌ Falsches Passwort! Vorgang abgebrochen.")
+
+# --- Gruppe hinzufügen ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_add"):
         bot_name = context.user_data["selected_bot"]
@@ -103,7 +87,21 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["awaiting_group_add"] = False
 
-# --- Gruppe löschen mit Bestätigung ---
+# --- Passwortabfrage vor dem Löschen ---
+async def remove_group_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.edit_text("🔐 Bitte gib das Passwort ein, um eine Gruppe zu löschen:")
+    context.user_data["awaiting_password_remove"] = True
+
+async def check_password_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_password_remove"):
+        if update.message.text == PASSWORD:
+            context.user_data["awaiting_password_remove"] = False
+            await remove_group(update, context)  # Zeigt jetzt das Lösch-Menü an
+        else:
+            await update.message.reply_text("❌ Falsches Passwort! Vorgang abgebrochen.")
+
+# --- Gruppe löschen ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_name = context.user_data["selected_bot"]
@@ -149,13 +147,14 @@ def main():
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))  
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password_add))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password_remove))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
-    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
-    application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
+    application.add_handler(CallbackQueryHandler(add_group_password, pattern="^add_group_password$"))
+    application.add_handler(CallbackQueryHandler(remove_group_password, pattern="^remove_group_password$"))
     application.add_handler(CallbackQueryHandler(confirm_remove, pattern="^confirm_remove_.*"))
     application.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group_confirmed$"))
 
