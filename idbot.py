@@ -94,7 +94,25 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
 
-# --- TEST: Prüfen, ob `process_add_group()` AUFGERUFEN WIRD ---
+# --- Gruppenanzeige Fix ---
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
+
+    if groups:
+        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
+    else:
+        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
+
+    await query.message.edit_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
+    ]))
+
+# --- WICHTIG: `process_add_group()` MUSS GETRIGGERT WERDEN ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_group_add"):
         return
@@ -111,13 +129,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
-        rows_updated = cursor.rowcount  
-
-        if rows_updated == 0:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-            debug_log(f"✅ INSERT erfolgreich für {chat_id} in {column_name}")
-
+        cursor.execute(f"INSERT OR REPLACE INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
         conn.commit()
 
         cursor.execute(f"SELECT * FROM allowed_groups WHERE chat_id = ?", (chat_id,))
@@ -143,6 +155,7 @@ def main():
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
+    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     debug_log("🚀 Bot wurde gestartet und alle Handlers wurden gesetzt!")
     print("🤖 Bot gestartet! Warte auf Befehle...")
