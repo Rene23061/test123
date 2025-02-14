@@ -54,9 +54,31 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    if update.callback_query:
+        await update.callback_query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+
+# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
+async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = query.data.replace("manage_bot_", "")
+    context.user_data["selected_bot"] = bot_name  
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
+        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
+    ]
+    
+    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Gruppe zur Whitelist hinzufügen ---
+async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
+    context.user_data["awaiting_group_add"] = True
+
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_add"):
         bot_name = context.user_data["selected_bot"]
@@ -64,7 +86,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         column_name = f"allow_{bot_name}"
 
         try:
-            # UPDATE versuchen
+            # Erst versuchen, ein UPDATE durchzuführen
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             
             if cursor.rowcount == 0:  
@@ -86,6 +108,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
     bot_name = context.user_data["selected_bot"]
     column_name = f"allow_{bot_name}"
 
@@ -97,7 +120,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         response = f"❌ Keine Gruppen für {bot_name} eingetragen."
 
-    await update.callback_query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
     ]))
 
@@ -110,6 +133,8 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
+    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
+    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
