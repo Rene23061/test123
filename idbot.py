@@ -97,11 +97,20 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_message(f"📝 Eintragen: {chat_id} → {column_name}")
 
         try:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1) ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1", (chat_id,))
             conn.commit()
-            log_message(f"✅ Nach Einfügen: {cursor.execute('SELECT * FROM allowed_groups WHERE chat_id=?', (chat_id,)).fetchone()}")
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
-        except sqlite3.IntegrityError:
+
+            # Überprüfe direkt nach dem Einfügen, ob die Änderung vorhanden ist
+            cursor.execute("SELECT * FROM allowed_groups WHERE chat_id=?", (chat_id,))
+            inserted_data = cursor.fetchone()
+            log_message(f"✅ Nach Einfügen in DB: {inserted_data}")
+
+            if inserted_data:
+                await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
+            else:
+                await update.message.reply_text(f"⚠️ Fehler beim Einfügen von {chat_id} in {bot_name}.")
+        except sqlite3.IntegrityError as e:
+            log_message(f"⚠️ SQLite-Fehler: {e}")
             await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
 
         context.user_data["awaiting_group_add"] = False
