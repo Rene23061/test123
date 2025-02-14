@@ -80,33 +80,19 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
-# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
-async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = query.data.replace("manage_bot_", "")
-    context.user_data["selected_bot"] = bot_name  
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
-        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
-    ]
-    
-    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
-
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
 
+# --- TEST: Prüfen, ob `process_add_group()` AUFGERUFEN WIRD ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.text.strip()
     bot_name = context.user_data.get("selected_bot")
     column_name = f"allow_{bot_name}"
 
     debug_log(f"🔍 process_add_group() gestartet: {chat_id} → {column_name}")
-
     await update.message.reply_text(f"✅ TEST: `process_add_group()` wurde AUFGERUFEN mit ID {chat_id}")
 
     if not bot_name:
@@ -144,7 +130,6 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
-    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
