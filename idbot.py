@@ -87,7 +87,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Test: Direkt bestätigen, dass diese Funktion läuft
     await update.message.reply_text(f"🔍 TEST: process_add_group() wurde aufgerufen mit {chat_id}")
 
-    # In Datei schreiben
+    # Prüfe, ob die Datei geschrieben werden kann
     try:
         with open("debug_log.txt", "a") as debug_file:
             debug_file.write(f"✅ process_add_group() wurde aufgerufen mit {chat_id}\n")
@@ -105,14 +105,23 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             rows_updated = cursor.rowcount  
-            
+
             if rows_updated == 0:
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-            
-            conn.commit()
+
+            # Debugging: Direkt prüfen, ob die Zeile existiert
+            cursor.execute(f"SELECT * FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+            row = cursor.fetchone()
+
+            with open("debug_log.txt", "a") as debug_file:
+                debug_file.write(f"📌 NACH PRÜFUNG: Datenbank gibt zurück: {row}\n")
+
+            conn.commit()  # Speichern!
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
 
         except sqlite3.Error as e:
+            with open("debug_log.txt", "a") as debug_file:
+                debug_file.write(f"❌ SQL-Fehler: {e}\n")
             await update.message.reply_text(f"⚠️ SQL-Fehler: {e}")
 
         context.user_data["awaiting_group_add"] = False
