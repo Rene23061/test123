@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
-TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
+TOKEN = "DEIN_TELEGRAM_BOT_TOKEN"
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -13,15 +13,9 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Debug-Log schreiben ---
-def log_message(message):
-    with open("debug_log.txt", "a") as log_file:
-        log_file.write(message + "\n")
-    print(message)
-
 # --- /start-Befehl ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔐 Zugriff gewährt!")
+    await update.message.reply_text("🤖 Willkommen! Wähle einen Bot zur Verwaltung aus:")
     await show_bots(update, context)
 
 # --- Alle Bots aus der Datenbank anzeigen ---
@@ -29,19 +23,15 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query if update.callback_query else update.message
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
-    bots = [col.replace("allow_", "") for col in columns]
 
+    bots = [col.replace("allow_", "") for col in columns]
     if not bots:
         await query.reply_text("❌ Keine Bots gefunden!")
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
-    if isinstance(query, Update) or not hasattr(query, "edit_message_text"):
-        await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -53,7 +43,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
         [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group")],
         [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
+        [InlineKeyboardButton("🔙 Zurück zur Bot-Auswahl", callback_data="show_bots")]
     ]
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -63,40 +53,22 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
-    log_message("📌 add_group() wurde aufgerufen - Warte auf Gruppen-ID.")
 
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_add"):
-        bot_name = context.user_data.get("selected_bot")
-        if not bot_name:
-            log_message("⚠️ Fehler: Kein Bot ausgewählt!")
-            await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
-            return
-
+        bot_name = context.user_data["selected_bot"]
         chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
-        log_message(f"📝 Eintragen: {chat_id} → {column_name}")
-
         try:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1) ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1", (chat_id,))
+            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
             conn.commit()
-            
-            cursor.execute(f"SELECT {column_name} FROM allowed_groups WHERE chat_id = ?", (chat_id,))
-            inserted_data = cursor.fetchone()
-
-            if inserted_data and inserted_data[0] == 1:
-                log_message(f"✅ Nach Einfügen in DB: {inserted_data}")
-                keyboard = [[InlineKeyboardButton("🔙 Zurück zur Verwaltung", callback_data=f"manage_bot_{bot_name}")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
-                await update.message.reply_text(f"✅ Gruppe {chat_id} wurde erfolgreich für {bot_name} hinzugefügt.", reply_markup=reply_markup)
-            else:
-                await update.message.reply_text(f"⚠️ Gruppe konnte nicht hinzugefügt werden.")
+            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
         except sqlite3.IntegrityError:
             await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
 
         context.user_data["awaiting_group_add"] = False
+        await manage_bot(update, context)  # Zur Verwaltung zurückkehren
 
 # --- Gruppe aus der Whitelist entfernen ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,13 +86,12 @@ async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYP
         conn.commit()
 
         if cursor.rowcount > 0:
-            keyboard = [[InlineKeyboardButton("🔙 Zurück zur Verwaltung", callback_data=f"manage_bot_{bot_name}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.", reply_markup=reply_markup)
+            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.")
         else:
             await update.message.reply_text(f"⚠️ Diese Gruppe existiert nicht für {bot_name}.")
 
         context.user_data["awaiting_group_remove"] = False
+        await manage_bot(update, context)  # Zur Verwaltung zurückkehren
 
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,7 +108,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = f"❌ Keine Gruppen für {bot_name} eingetragen."
 
     await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
+        [InlineKeyboardButton("🔙 Zurück zur Verwaltung", callback_data="manage_bot_" + bot_name)]
     ]))
 
 # --- Hauptfunktion zum Starten des Bots ---
