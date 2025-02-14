@@ -17,11 +17,11 @@ conn, cursor = init_db()
 def log_message(message):
     with open("debug_log.txt", "a") as log_file:
         log_file.write(message + "\n")
-    print(message)  # Auch in die Konsole ausgeben
+    print(message)
 
-# --- /start-Befehl (keine Passwortprüfung) ---
+# --- /start-Befehl ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    log_message("🚀 /start wurde aufgerufen (ohne Passwort).")
+    log_message("🚀 /start wurde aufgerufen.")
     await show_bots(update, context)
 
 # --- Alle Bots aus der Datenbank anzeigen ---
@@ -44,7 +44,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
-# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
+# --- Bot-Verwaltungsmenü ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_name = query.data.replace("manage_bot_", "")
@@ -89,9 +89,13 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
             log_message(f"✅ Nach Einfügen in DB: {inserted_data}")
 
             if inserted_data:
-                await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
+                keyboard = [[InlineKeyboardButton("🔙 Zurück zur Verwaltung", callback_data=f"manage_bot_{bot_name}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.", reply_markup=reply_markup)
             else:
                 await update.message.reply_text(f"⚠️ Fehler beim Einfügen von {chat_id} in {bot_name}.")
+
         except sqlite3.Error as e:
             log_message(f"⚠️ SQLite-Fehler: {e}")
             await update.message.reply_text(f"⚠️ Fehler in der Datenbank: {e}")
@@ -130,7 +134,7 @@ def main():
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
-    log_message("🚀 Bot wurde gestartet (OHNE Passwortprüfung)!")
+    log_message("🚀 Bot wurde gestartet!")
     application.run_polling()
 
 if __name__ == "__main__":
