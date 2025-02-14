@@ -18,12 +18,12 @@ conn, cursor = init_db()
 
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("authenticated"):  # Falls bereits angemeldet, direkt ins Menü
+    if context.user_data.get("authenticated"):  
         await update.message.reply_text("🔓 Du bist bereits angemeldet!", reply_markup=main_menu())
         return
 
     await update.message.reply_text("🔐 Bitte gib das Passwort ein, um Zugriff zu erhalten:")
-    context.user_data["awaiting_password"] = True  # Setzt den Status für die nächste Eingabe
+    context.user_data["awaiting_password"] = True  
 
 # --- Passwortprüfung ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,7 +33,7 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["awaiting_password"] = False
             await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.", reply_markup=main_menu())
         else:
-            await update.message.reply_text("❌ Falsches Passwort! Bitte versuche es erneut mit /start.")
+            await update.message.reply_text("❌ Falsches Passwort! Bitte starte erneut mit /start.")
             context.user_data["awaiting_password"] = False
 
 # --- Hauptmenü ---
@@ -41,10 +41,10 @@ def main_menu():
     keyboard = [[InlineKeyboardButton("🔧 Bot verwalten", callback_data="show_bots")]]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Zugriffskontrolle: Blockiert alle Funktionen für nicht authentifizierte Nutzer ---
+# --- Zugriffskontrolle ---
 async def access_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("authenticated"):
-        await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das richtige Passwort ein.")
+        await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das Passwort ein.")
         return False
     return True
 
@@ -97,9 +97,9 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
             conn.commit()
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde hinzugefügt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
         except sqlite3.IntegrityError:
-            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
+            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits eingetragen.")
 
         context.user_data["awaiting_group_add"] = False
 
@@ -142,7 +142,7 @@ async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id:
         cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
         conn.commit()
-        await query.message.edit_text(f"✅ Gruppe {chat_id} wurde erfolgreich aus {bot_name} entfernt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+        await query.message.edit_text(f"✅ Gruppe {chat_id} wurde gelöscht.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
 
 # --- Bot starten ---
 def main():
@@ -154,7 +154,11 @@ def main():
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
-    
+    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
+    application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
+    application.add_handler(CallbackQueryHandler(confirm_remove, pattern="^confirm_remove_.*"))
+    application.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group_confirmed$"))
+
     print("🤖 Bot gestartet!")
     application.run_polling()
 
