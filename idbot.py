@@ -34,9 +34,9 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="main_menu")])
+    
+    await query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Bot-Verwaltungsmenü ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,30 +91,34 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("🔙 Abbrechen", callback_data=f"manage_bot_{bot_name}")])
     await query.message.edit_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Bestätigung für das Löschen (Sicherheitsabfrage) ---
+# --- **Sicherheitsabfrage: Bestätigung vor dem Löschen** ---
 async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.data.replace("confirm_remove_", "")
     bot_name = context.user_data["selected_bot"]
+    context.user_data["delete_group_id"] = chat_id  # Speichert die Gruppen-ID für Bestätigung
 
     keyboard = [
-        [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"delete_group_{chat_id}")],
+        [InlineKeyboardButton("✅ Ja, löschen", callback_data="delete_group_confirmed")],
         [InlineKeyboardButton("❌ Nein, abbrechen", callback_data=f"manage_bot_{bot_name}")]
     ]
     
     await query.message.edit_text(f"⚠️ **Bist du sicher, dass du die Gruppe {chat_id} löschen möchtest?**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Löschen der Gruppe nach Bestätigung ---
+# --- **Löschen der Gruppe nach Bestätigung** ---
 async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.data.replace("delete_group_", "")
+    chat_id = context.user_data.get("delete_group_id")  # Holt die gespeicherte Gruppen-ID
     bot_name = context.user_data["selected_bot"]
     column_name = f"allow_{bot_name}"
 
-    cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
-    conn.commit()
+    if chat_id:
+        cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
+        conn.commit()
 
-    await query.message.edit_text(f"✅ Gruppe {chat_id} wurde erfolgreich aus {bot_name} entfernt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+        await query.message.edit_text(f"✅ Gruppe {chat_id} wurde erfolgreich aus {bot_name} entfernt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+    else:
+        await query.message.edit_text("⚠️ Fehler: Keine gültige Gruppen-ID gefunden.")
 
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -144,7 +148,7 @@ def main():
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
     application.add_handler(CallbackQueryHandler(confirm_remove, pattern="^confirm_remove_.*"))
-    application.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group_.*"))
+    application.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group_confirmed$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
