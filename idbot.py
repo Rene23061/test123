@@ -3,7 +3,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Logging für NUR Datenbank-Fehler, kein HTTP-Log-Spam ---
+# --- Logging für NUR Datenbank-Fehler ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)  # Deaktiviert HTTP-Logs
 logging.getLogger("telegram").setLevel(logging.WARNING)
@@ -61,20 +61,6 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
-# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
-async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = query.data.replace("manage_bot_", "")
-    context.user_data["selected_bot"] = bot_name  
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
-        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
-    ]
-    
-    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
-
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -83,21 +69,22 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_add"):
-        bot_name = context.user_data["selected_bot"]
+        bot_name = context.user_data.get("selected_bot")
         chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
-        try:
-            logging.info(f"📌 VERSUCH: UPDATE {column_name} auf 1 für chat_id={chat_id}")
+        logging.info(f"📌 process_add_group() wurde aufgerufen mit chat_id={chat_id} für {bot_name}")
 
+        try:
             # 1️⃣ UPDATE versuchen
+            logging.info(f"🔄 SQL-UPDATE: SET {column_name} = 1 WHERE chat_id = {chat_id}")
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             rows_updated = cursor.rowcount  # Wie viele Zeilen wurden aktualisiert?
-            logging.info(f"🔄 UPDATE geändert: {rows_updated} Zeilen")
+            logging.info(f"🔍 UPDATE geändert: {rows_updated} Zeilen")
 
             # 2️⃣ Falls das UPDATE keine Zeilen geändert hat, INSERT ausführen
             if rows_updated == 0:
-                logging.info(f"⚠️ Kein UPDATE passiert! Versuche INSERT für chat_id={chat_id}")
+                logging.info(f"⚠️ UPDATE fehlgeschlagen! INSERT wird versucht für chat_id={chat_id}")
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
                 logging.info(f"✅ INSERT erfolgreich für chat_id={chat_id}")
 
