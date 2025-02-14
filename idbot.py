@@ -52,33 +52,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ===================== Gruppe Hinzufügen =====================
-
-async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
-    context.user_data["awaiting_group_add"] = True
-
-async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_group_add"):
-        bot_name = context.user_data["selected_bot"]
-        chat_id = update.message.text.strip()
-        column_name = f"allow_{bot_name}"
-
-        cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
-        exists = cursor.fetchone()
-
-        if exists:
-            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
-        else:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-            conn.commit()
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
-
-        context.user_data["awaiting_group_add"] = False
-        await manage_bot(update, context)  # Zurück ins Bot-Management-Menü
-
-# ===================== Gruppe Entfernen =====================
+# ===================== Gruppe Entfernen (Fix) =====================
 
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -91,37 +65,32 @@ async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYP
         chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
+        # 🛠 Debug: Zeigt an, welche ID gelöscht werden soll
+        print(f"🔍 Lösche Gruppe: {chat_id} für {bot_name}")
+
+        # Überprüfen, ob die Gruppe existiert
         cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
         exists = cursor.fetchone()
 
         if not exists:
-            await update.message.reply_text(f"⚠️ Diese Gruppe existiert nicht für {bot_name}.")
+            await update.message.reply_text(f"⚠️ Die Gruppe {chat_id} existiert nicht für {bot_name}.")
+            print(f"⚠️ Gruppe {chat_id} existiert nicht.")
         else:
+            # 🛠 Debug: Bestätigung, dass Gruppe gefunden wurde
+            print(f"✅ Gruppe {chat_id} existiert. Lösche jetzt...")
+            
             cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
             conn.commit()
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.")
+
+            if cursor.rowcount > 0:
+                await update.message.reply_text(f"✅ Gruppe {chat_id} wurde erfolgreich entfernt.")
+                print(f"✅ Gruppe {chat_id} wurde erfolgreich entfernt.")
+            else:
+                await update.message.reply_text(f"❌ Fehler beim Löschen von {chat_id}.")
+                print(f"❌ Fehler beim Löschen von {chat_id}.")
 
         context.user_data["awaiting_group_remove"] = False
         await manage_bot(update, context)  # Zurück ins Bot-Management-Menü
-
-# ===================== Gruppen Anzeigen =====================
-
-async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name}"
-
-    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
-    groups = cursor.fetchall()
-
-    if groups:
-        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
-    else:
-        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
-
-    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
-    ]))
 
 # ===================== Bot Initialisierung =====================
 
@@ -131,15 +100,12 @@ def main():
     application.add_handler(CommandHandler("start", start))
     
     # Gruppen Einfügen und Entfernen als eigene MessageHandler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
     # Callback-Handler für Menüführung
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
-    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
-    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
