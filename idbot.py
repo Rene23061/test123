@@ -83,6 +83,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    debug_log("🔍 add_group() wurde aufgerufen.")
     await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
 
@@ -132,6 +133,7 @@ def main():
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
 
+    debug_log("🚀 Bot wurde gestartet und alle Handlers wurden gesetzt!")
     print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
 
