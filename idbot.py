@@ -32,10 +32,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if isinstance(query, Update) or not hasattr(query, "edit_message_text"):
-        await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -51,7 +48,46 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ===================== Gruppe entfernen - NEUES MENÜ =====================
+# ===================== Gruppe hinzufügen - FIX =====================
+async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
+    context.user_data["awaiting_group_add"] = True
+
+async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_group_add"):
+        bot_name = context.user_data["selected_bot"]
+        chat_id = update.message.text.strip()
+        column_name = f"allow_{bot_name}"
+
+        try:
+            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+            conn.commit()
+            await update.message.reply_text(f"✅ Gruppe `{chat_id}` wurde hinzugefügt.", parse_mode="Markdown")
+        except sqlite3.IntegrityError:
+            await update.message.reply_text(f"⚠️ Gruppe `{chat_id}` ist bereits eingetragen.", parse_mode="Markdown")
+
+        context.user_data["awaiting_group_add"] = False
+
+# ===================== Gruppen anzeigen - FIX =====================
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
+
+    if groups:
+        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
+    else:
+        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
+
+    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]
+    ]))
+
+# ===================== Gruppe entfernen - BLEIBT =====================
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_name = context.user_data["selected_bot"]
@@ -114,13 +150,15 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    
-    # Callback-Handler für Menüführung
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
+
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
+    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
     application.add_handler(CallbackQueryHandler(confirm_delete, pattern="^confirm_delete_.*"))
     application.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group$"))
+    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
