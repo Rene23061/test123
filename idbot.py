@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
-TOKEN = "DEIN_TELEGRAM_BOT_TOKEN"
+TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -15,7 +15,7 @@ conn, cursor = init_db()
 
 # --- /start-Befehl ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Willkommen! Wähle einen Bot zur Verwaltung aus:")
+    await update.message.reply_text("🤖 Willkommen! Wähle einen Bot zur Verwaltung:")
     await show_bots(update, context)
 
 # --- Alle Bots aus der Datenbank anzeigen ---
@@ -31,7 +31,11 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+
+    if isinstance(query, Update) or not hasattr(query, "edit_message_text"):
+        await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    else:
+        await query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -43,7 +47,7 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
         [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group")],
         [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück zur Bot-Auswahl", callback_data="show_bots")]
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
     ]
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -68,7 +72,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
 
         context.user_data["awaiting_group_add"] = False
-        await manage_bot(update, context)  # Zur Verwaltung zurückkehren
+        await show_bots(update, context)  # Zurück ins Hauptmenü
 
 # --- Gruppe aus der Whitelist entfernen ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,7 +95,7 @@ async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(f"⚠️ Diese Gruppe existiert nicht für {bot_name}.")
 
         context.user_data["awaiting_group_remove"] = False
-        await manage_bot(update, context)  # Zur Verwaltung zurückkehren
+        await show_bots(update, context)  # Zurück ins Hauptmenü
 
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,7 +112,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = f"❌ Keine Gruppen für {bot_name} eingetragen."
 
     await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück zur Verwaltung", callback_data="manage_bot_" + bot_name)]
+        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
     ]))
 
 # --- Hauptfunktion zum Starten des Bots ---
