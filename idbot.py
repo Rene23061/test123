@@ -24,22 +24,19 @@ def main_menu():
 
 # --- Alle Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query if update.callback_query else update.message
+    query = update.callback_query
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
 
     bots = [col.replace("allow_", "") for col in columns]
     if not bots:
-        await query.reply_text("❌ Keine Bots gefunden!")
+        await query.message.edit_text("❌ Keine Bots gefunden!")
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if hasattr(query, "message"):
-        await query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await query.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    await query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,12 +51,12 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
     ]
     
-    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.edit_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
+    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
 
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -87,24 +84,37 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     groups = cursor.fetchall()
 
     if not groups:
-        await query.edit_message_text(f"❌ Keine Gruppen für {bot_name} eingetragen.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+        await query.message.edit_text(f"❌ Keine Gruppen für {bot_name} eingetragen.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
         return
 
     keyboard = [[InlineKeyboardButton(str(group[0]), callback_data=f"confirm_remove_{group[0]}")] for group in groups]
     keyboard.append([InlineKeyboardButton("🔙 Abbrechen", callback_data=f"manage_bot_{bot_name}")])
-    await query.edit_message_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.edit_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Bestätigung für das Löschen ---
+# --- Bestätigung für das Löschen (Sicherheitsabfrage) ---
 async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.data.replace("confirm_remove_", "")
+    bot_name = context.user_data["selected_bot"]
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"delete_group_{chat_id}")],
+        [InlineKeyboardButton("❌ Nein, abbrechen", callback_data=f"manage_bot_{bot_name}")]
+    ]
+    
+    await query.message.edit_text(f"⚠️ **Bist du sicher, dass du die Gruppe {chat_id} löschen möchtest?**", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# --- Löschen der Gruppe nach Bestätigung ---
+async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = query.data.replace("delete_group_", "")
     bot_name = context.user_data["selected_bot"]
     column_name = f"allow_{bot_name}"
 
     cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
     conn.commit()
 
-    await query.edit_message_text(f"✅ Gruppe {chat_id} wurde aus {bot_name} entfernt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+    await query.message.edit_text(f"✅ Gruppe {chat_id} wurde erfolgreich aus {bot_name} entfernt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
 
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -120,7 +130,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         response = f"❌ Keine Gruppen für {bot_name} eingetragen."
 
-    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+    await query.message.edit_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
@@ -134,6 +144,7 @@ def main():
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
     application.add_handler(CallbackQueryHandler(confirm_remove, pattern="^confirm_remove_.*"))
+    application.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group_.*"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
