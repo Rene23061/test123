@@ -3,10 +3,8 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Logging für NUR Datenbank, keine HTTP-Logs ---
+# --- Logging für NUR Datenbank-Fehler, kein HTTP-Log-Spam ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-logging.getLogger("httpx").setLevel(logging.WARNING)  # HTTP-Logs deaktivieren
-logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
@@ -58,7 +56,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
-# --- Gruppe zur Whitelist hinzufügen (Nur DB-Logs) ---
+# --- Gruppe zur Whitelist hinzufügen ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_add"):
         bot_name = context.user_data["selected_bot"]
@@ -66,19 +64,22 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         column_name = f"allow_{bot_name}"
 
         try:
-            logging.info(f"📌 Versuch: UPDATE {column_name} für Chat-ID {chat_id}")
+            # UPDATE versuchen
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             
             if cursor.rowcount == 0:  
-                logging.info(f"🔄 Kein bestehender Eintrag. Versuch: INSERT für {chat_id} in {column_name}")
+                # Falls kein UPDATE möglich war, INSERT ausführen
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-            
+                logging.info(f"➕ Neue Gruppe eingetragen: {chat_id} für {bot_name}")
+            else:
+                logging.info(f"🔄 Bestehende Gruppe aktualisiert: {chat_id} für {bot_name}")
+
             conn.commit()
-            logging.info(f"✅ ERFOLG: {chat_id} wurde in {column_name} gespeichert")
+            logging.info(f"✅ Datenbank gespeichert: {chat_id} in {column_name}")
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
 
         except sqlite3.Error as e:
-            logging.error(f"❌ FEHLER: SQL-Fehler beim Einfügen: {e}")
+            logging.error(f"❌ SQL-Fehler: {e}")
             await update.message.reply_text(f"⚠️ SQL-Fehler: {e}")
 
         context.user_data["awaiting_group_add"] = False
