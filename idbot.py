@@ -61,6 +61,20 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
+# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
+async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = query.data.replace("manage_bot_", "")
+    context.user_data["selected_bot"] = bot_name  
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
+        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
+    ]
+    
+    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
+
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
