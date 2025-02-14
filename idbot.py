@@ -22,6 +22,14 @@ def init_db():
 
 conn, cursor = init_db()
 
+# --- DEBUG-Funktion ---
+def debug_log(message):
+    try:
+        with open("debug_log.txt", "a") as debug_file:
+            debug_file.write(f"{message}\n")
+    except Exception as e:
+        print(f"❌ Fehler beim Schreiben in debug_log.txt: {e}")
+
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
@@ -41,6 +49,8 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Alle Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    debug_log("📌 show_bots() wurde aufgerufen.")
+    
     if not context.user_data.get("authenticated"):
         await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das richtige Passwort ein.")
         return
@@ -49,6 +59,8 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
 
     bots = [col.replace("allow_", "") for col in columns]
+    debug_log(f"📌 Gefundene Bots: {bots}")
+
     if not bots:
         await update.message.reply_text("❌ Keine Bots gefunden!")
         return
@@ -83,48 +95,36 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.text.strip()
-    
-    # Test: Direkt bestätigen, dass diese Funktion läuft
-    await update.message.reply_text(f"🔍 TEST: process_add_group() wurde aufgerufen mit {chat_id}")
+    bot_name = context.user_data.get("selected_bot")
+    column_name = f"allow_{bot_name}"
 
-    # Prüfe, ob die Datei geschrieben werden kann
+    debug_log(f"🔍 process_add_group() gestartet: {chat_id} → {column_name}")
+
+    if not bot_name:
+        await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
+        return
+
     try:
-        with open("debug_log.txt", "a") as debug_file:
-            debug_file.write(f"✅ process_add_group() wurde aufgerufen mit {chat_id}\n")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Fehler beim Schreiben in Datei: {e}")
+        cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
+        rows_updated = cursor.rowcount  
 
-    if context.user_data.get("awaiting_group_add"):
-        bot_name = context.user_data.get("selected_bot")
-        column_name = f"allow_{bot_name}"
+        if rows_updated == 0:
+            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+            debug_log(f"✅ INSERT erfolgreich für {chat_id} in {column_name}")
 
-        if not bot_name:
-            await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
-            return
+        conn.commit()
 
-        try:
-            cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
-            rows_updated = cursor.rowcount  
+        cursor.execute(f"SELECT * FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+        row = cursor.fetchone()
+        debug_log(f"📌 Nach Einfügen: {row}")
 
-            if rows_updated == 0:
-                cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+        await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
 
-            # Debugging: Direkt prüfen, ob die Zeile existiert
-            cursor.execute(f"SELECT * FROM allowed_groups WHERE chat_id = ?", (chat_id,))
-            row = cursor.fetchone()
+    except sqlite3.Error as e:
+        debug_log(f"❌ SQL-Fehler: {e}")
+        await update.message.reply_text(f"⚠️ SQL-Fehler: {e}")
 
-            with open("debug_log.txt", "a") as debug_file:
-                debug_file.write(f"📌 NACH PRÜFUNG: Datenbank gibt zurück: {row}\n")
-
-            conn.commit()  # Speichern!
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
-
-        except sqlite3.Error as e:
-            with open("debug_log.txt", "a") as debug_file:
-                debug_file.write(f"❌ SQL-Fehler: {e}\n")
-            await update.message.reply_text(f"⚠️ SQL-Fehler: {e}")
-
-        context.user_data["awaiting_group_add"] = False
+    context.user_data["awaiting_group_add"] = False
 
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,6 +134,8 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
     groups = cursor.fetchall()
+    
+    debug_log(f"📌 list_groups() aufgerufen für {bot_name}: {groups}")
 
     if groups:
         response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
