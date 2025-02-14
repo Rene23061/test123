@@ -61,6 +61,20 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
+# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
+async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = query.data.replace("manage_bot_", "")
+    context.user_data["selected_bot"] = bot_name  
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
+        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
+    ]
+    
+    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
+
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -74,15 +88,18 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         column_name = f"allow_{bot_name}"
 
         try:
-            logging.info(f"📌 SQL-UPDATE Versuch: {column_name} auf 1 setzen für chat_id={chat_id}")
+            logging.info(f"📌 VERSUCH: UPDATE {column_name} auf 1 für chat_id={chat_id}")
+
+            # 1️⃣ UPDATE versuchen
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
-            
-            if cursor.rowcount == 0:  
-                logging.info(f"⚠️ Kein UPDATE möglich. Versuche INSERT für chat_id={chat_id}")
+            rows_updated = cursor.rowcount  # Wie viele Zeilen wurden aktualisiert?
+            logging.info(f"🔄 UPDATE geändert: {rows_updated} Zeilen")
+
+            # 2️⃣ Falls das UPDATE keine Zeilen geändert hat, INSERT ausführen
+            if rows_updated == 0:
+                logging.info(f"⚠️ Kein UPDATE passiert! Versuche INSERT für chat_id={chat_id}")
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
                 logging.info(f"✅ INSERT erfolgreich für chat_id={chat_id}")
-            else:
-                logging.info(f"✅ UPDATE erfolgreich für chat_id={chat_id}")
 
             conn.commit()
             logging.info(f"✅ Datenbank gespeichert: {chat_id} in {column_name}")
@@ -121,6 +138,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
+    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
