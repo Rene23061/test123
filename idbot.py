@@ -1,13 +1,12 @@
 import sqlite3
 import logging
-import sys
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Logging für NUR Datenbank, keine HTTP-Logs ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-logging.getLogger("httpx").setLevel(logging.WARNING)  # Versteckt HTTP-Logs von python-telegram-bot
-logging.getLogger("telegram").setLevel(logging.WARNING)  # Versteckt Telegram-Bibliotheks-Logs
+logging.getLogger("httpx").setLevel(logging.WARNING)  # HTTP-Logs deaktivieren
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
@@ -46,47 +45,20 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das richtige Passwort ein.")
         return
 
-    query = update.callback_query if update.callback_query else None
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall() if col[1].startswith("allow_")]
 
     bots = [col.replace("allow_", "") for col in columns]
     if not bots:
-        if query:
-            await query.message.reply_text("❌ Keine Bots gefunden!")
-        else:
-            await update.message.reply_text("❌ Keine Bots gefunden!")
+        await update.message.reply_text("❌ Keine Bots gefunden!")
         return
 
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if query:
-        await query.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-
-# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
-async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = query.data.replace("manage_bot_", "")
-    context.user_data["selected_bot"] = bot_name  
-
-    keyboard = [
-        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
-        [InlineKeyboardButton("➖ Gruppe entfernen", callback_data="remove_group")],
-        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
-    ]
-    
-    await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Gruppe zur Whitelist hinzufügen (Nur DB-Logs) ---
-async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
-    context.user_data["awaiting_group_add"] = True
-
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_add"):
         bot_name = context.user_data["selected_bot"]
@@ -94,25 +66,25 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         column_name = f"allow_{bot_name}"
 
         try:
+            logging.info(f"📌 Versuch: UPDATE {column_name} für Chat-ID {chat_id}")
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
+            
             if cursor.rowcount == 0:  
+                logging.info(f"🔄 Kein bestehender Eintrag. Versuch: INSERT für {chat_id} in {column_name}")
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-                logging.info(f"✅ Neue Gruppe eingetragen: {chat_id} in {column_name}")
-            else:
-                logging.info(f"✅ Bestehende Gruppe aktualisiert: {chat_id} in {column_name}")
-
+            
             conn.commit()
-            logging.info(f"✅ Datenbank gespeichert: {chat_id} in {column_name}")
+            logging.info(f"✅ ERFOLG: {chat_id} wurde in {column_name} gespeichert")
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
+
         except sqlite3.Error as e:
-            logging.error(f"❌ Fehler beim Einfügen: {e}")
-            await update.message.reply_text(f"⚠️ Fehler: {e}")
+            logging.error(f"❌ FEHLER: SQL-Fehler beim Einfügen: {e}")
+            await update.message.reply_text(f"⚠️ SQL-Fehler: {e}")
 
         context.user_data["awaiting_group_add"] = False
 
 # --- Gruppen anzeigen ---
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
     bot_name = context.user_data["selected_bot"]
     column_name = f"allow_{bot_name}"
 
@@ -124,7 +96,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         response = f"❌ Keine Gruppen für {bot_name} eingetragen."
 
-    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+    await update.callback_query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
     ]))
 
@@ -137,8 +109,6 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
-    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
-    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
