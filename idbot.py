@@ -28,8 +28,11 @@ conn, cursor = init_db()
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_message("🔑 /start wurde aufgerufen.")
-    await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
-    context.user_data["awaiting_password"] = True
+    if context.user_data.get("authenticated"):
+        await show_bots(update, context)
+    else:
+        await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
+        context.user_data["awaiting_password"] = True
 
 # --- Passwortprüfung ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
