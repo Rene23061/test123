@@ -82,17 +82,23 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_group_add"] = True
 
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    with open("debug_log.txt", "a") as debug_file:  # Datei zum Loggen
-        debug_file.write("📌 process_add_group() wurde aufgerufen\n")
+    chat_id = update.message.text.strip()
+    
+    # Test: Direkt bestätigen, dass diese Funktion läuft
+    await update.message.reply_text(f"🔍 TEST: process_add_group() wurde aufgerufen mit {chat_id}")
+
+    # In Datei schreiben
+    try:
+        with open("debug_log.txt", "a") as debug_file:
+            debug_file.write(f"✅ process_add_group() wurde aufgerufen mit {chat_id}\n")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Fehler beim Schreiben in Datei: {e}")
 
     if context.user_data.get("awaiting_group_add"):
         bot_name = context.user_data.get("selected_bot")
-        chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
         if not bot_name:
-            with open("debug_log.txt", "a") as debug_file:
-                debug_file.write(f"❌ Fehler: Kein bot_name in user_data gefunden!\n")
             await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
             return
 
@@ -100,20 +106,13 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute(f"UPDATE allowed_groups SET {column_name} = 1 WHERE chat_id = ?", (chat_id,))
             rows_updated = cursor.rowcount  
             
-            with open("debug_log.txt", "a") as debug_file:
-                debug_file.write(f"🔍 UPDATE geändert: {rows_updated} Zeilen für {chat_id} in {column_name}\n")
-
             if rows_updated == 0:
                 cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
-                with open("debug_log.txt", "a") as debug_file:
-                    debug_file.write(f"✅ INSERT erfolgreich für {chat_id} in {column_name}\n")
-
+            
             conn.commit()
             await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.")
 
         except sqlite3.Error as e:
-            with open("debug_log.txt", "a") as debug_file:
-                debug_file.write(f"❌ SQL-Fehler: {e}\n")
             await update.message.reply_text(f"⚠️ SQL-Fehler: {e}")
 
         context.user_data["awaiting_group_add"] = False
