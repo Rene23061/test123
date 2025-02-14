@@ -3,9 +3,9 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Logging für NUR Datenbank-Fehler ---
+# --- Logging nur für Datenbank-Fehler ---
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-logging.getLogger("httpx").setLevel(logging.WARNING)  # Deaktiviert HTTP-Logs
+logging.getLogger("httpx").setLevel(logging.WARNING)  # HTTP-Logs deaktivieren
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 # --- Telegram-Bot-Token ---
@@ -22,7 +22,7 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- DEBUG-Funktion: Erzwingt das Schreiben in die Log-Datei ---
+# --- DEBUG-Funktion für Datei-Logging ---
 def debug_log(message):
     try:
         with open("debug_log.txt", "a") as debug_file:
@@ -36,19 +36,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
     context.user_data["awaiting_password"] = True
 
-# --- Passwortprüfung (FIXED) ---
+# --- Passwortprüfung (nur nach /start) ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_password"):
+        return  # Ignoriert andere Eingaben als Passwort
+
     debug_log(f"🔑 Passwortprüfung gestartet mit Eingabe: {update.message.text}")
 
-    if context.user_data.get("awaiting_password"):
-        if update.message.text == PASSWORD:
-            await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.")
-            context.user_data["authenticated"] = True
-            context.user_data["awaiting_password"] = False
-            await show_bots(update, context)  # 🔥 Sichert, dass `show_bots()` ausgeführt wird
-        else:
-            await update.message.reply_text("❌ Falsches Passwort! Zugriff verweigert.")
-            context.user_data["awaiting_password"] = False
+    if update.message.text == PASSWORD:
+        await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.")
+        context.user_data["authenticated"] = True
+        context.user_data["awaiting_password"] = False
+        await show_bots(update, context)  # Direkter Übergang zum Bot-Menü
+    else:
+        await update.message.reply_text("❌ Falsches Passwort! Zugriff verweigert.")
+        context.user_data["awaiting_password"] = False
 
 # --- Alle Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,19 +114,23 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
     ]))
 
-# --- `process_add_group()` FIXED ---
+# --- FIX: Gruppen-ID Verarbeitung ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    debug_log("🔥 process_add_group() wurde aufgerufen!")
-
     if not context.user_data.get("awaiting_group_add"):
-        debug_log("❌ ERROR: `awaiting_group_add` war NICHT gesetzt.")
-        return
+        return  # Ignoriert falsche Eingaben
 
     chat_id = update.message.text.strip()
+
+    # **Sicherstellen, dass es eine numerische ID ist**
+    if not chat_id.lstrip('-').isdigit():
+        await update.message.reply_text("⚠️ Fehler: Ungültige Gruppen-ID!")
+        return
+
+    chat_id = int(chat_id)
     bot_name = context.user_data.get("selected_bot")
     column_name = f"allow_{bot_name}"
 
-    debug_log(f"📌 Start: {chat_id} → {column_name}")
+    debug_log(f"📌 Eintragen: {chat_id} → {column_name}")
 
     if not bot_name:
         await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
@@ -153,15 +159,15 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))  # ✅ FIXED
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^-?[0-9]+$"), process_add_group))  # ✅ FIXED
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(f"^{PASSWORD}$"), check_password))  # FIXED ✅
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^-?[0-9]+$"), process_add_group))  # FIXED ✅
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
-    debug_log("🚀 Bot wurde gestartet und alle Handlers wurden gesetzt!")
+    debug_log("🚀 Bot wurde gestartet!")
     print("🤖 Bot gestartet! Warte auf Befehle...")
     application.run_polling()
 
