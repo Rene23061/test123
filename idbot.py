@@ -61,47 +61,6 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.edit_message_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe zur Whitelist hinzufügen ---
-async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
-    context.user_data["awaiting_group_add"] = True
-    log_message("🔎 add_group() wurde aufgerufen.")
-
-async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_group_add"):
-        bot_name = context.user_data["selected_bot"]
-        chat_id = update.message.text.strip()
-        column_name = f"allow_{bot_name}"
-
-        log_message(f"📝 Eintragen: {chat_id} → {column_name}")
-
-        try:
-            cursor.execute(f"""
-                INSERT INTO allowed_groups (chat_id, {column_name}) 
-                VALUES (?, 1) 
-                ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1
-            """, (chat_id,))
-            conn.commit()
-
-            cursor.execute("SELECT * FROM allowed_groups WHERE chat_id=?", (chat_id,))
-            inserted_data = cursor.fetchone()
-            log_message(f"✅ Nach Einfügen in DB: {inserted_data}")
-
-            if inserted_data:
-                keyboard = [[InlineKeyboardButton("🔙 Zurück zur Verwaltung", callback_data=f"manage_bot_{bot_name}")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
-                await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.", reply_markup=reply_markup)
-            else:
-                await update.message.reply_text(f"⚠️ Fehler beim Einfügen von {chat_id} in {bot_name}.")
-
-        except sqlite3.Error as e:
-            log_message(f"⚠️ SQLite-Fehler: {e}")
-            await update.message.reply_text(f"⚠️ Fehler in der Datenbank: {e}")
-
-        context.user_data["awaiting_group_add"] = False
-
 # --- Gruppe aus der Whitelist entfernen ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -111,7 +70,12 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_remove"):
-        bot_name = context.user_data["selected_bot"]
+        bot_name = context.user_data.get("selected_bot")
+        if not bot_name:
+            log_message("⚠️ Kein Bot ausgewählt!")
+            await update.message.reply_text("⚠️ Fehler: Kein Bot ausgewählt!")
+            return
+
         chat_id = update.message.text.strip()
         column_name = f"allow_{bot_name}"
 
@@ -159,12 +123,10 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_remove_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
-    application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
     application.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
     application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
