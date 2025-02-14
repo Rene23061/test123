@@ -5,9 +5,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 # --- Telegram-Bot-Token ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
-# --- Passwort ---
-PASSWORD = "Shorty2306"
-
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
@@ -20,33 +17,15 @@ conn, cursor = init_db()
 def log_message(message):
     with open("debug_log.txt", "a") as log_file:
         log_file.write(message + "\n")
-    print(message)  # Auch in die Konsole ausgeben für Live-Debugging
+    print(message)  # Auch in die Konsole ausgeben
 
-# --- /start-Befehl mit Passwortabfrage ---
+# --- /start-Befehl (keine Passwortprüfung) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    log_message("🔑 /start wurde aufgerufen.")
-    await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
-    context.user_data["awaiting_password"] = True
-
-# --- Passwortprüfung ---
-async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_password"):
-        log_message(f"🔑 Passwortprüfung gestartet mit Eingabe: {update.message.text}")
-        if update.message.text == PASSWORD:
-            await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.")
-            context.user_data["authenticated"] = True
-            context.user_data["awaiting_password"] = False
-            await show_bots(update, context)
-        else:
-            await update.message.reply_text("❌ Falsches Passwort! Zugriff verweigert.")
-            context.user_data["awaiting_password"] = False
+    log_message("🚀 /start wurde aufgerufen (ohne Passwort).")
+    await show_bots(update, context)
 
 # --- Alle Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("authenticated"):
-        await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das richtige Passwort ein.")
-        return
-
     log_message("📌 show_bots() wurde aufgerufen.")
 
     query = update.callback_query if update.callback_query else update.message
@@ -98,11 +77,6 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_message(f"📝 Eintragen: {chat_id} → {column_name}")
 
         try:
-            # Vor Einfügen prüfen, ob die ID bereits existiert
-            cursor.execute("SELECT * FROM allowed_groups WHERE chat_id=?", (chat_id,))
-            existing_data = cursor.fetchone()
-            log_message(f"🔍 Vorheriger Eintrag: {existing_data}")
-
             cursor.execute(f"""
                 INSERT INTO allowed_groups (chat_id, {column_name}) 
                 VALUES (?, 1) 
@@ -110,7 +84,6 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
             """, (chat_id,))
             conn.commit()
 
-            # Überprüfe direkt nach dem Einfügen, ob die Änderung vorhanden ist
             cursor.execute("SELECT * FROM allowed_groups WHERE chat_id=?", (chat_id,))
             inserted_data = cursor.fetchone()
             log_message(f"✅ Nach Einfügen in DB: {inserted_data}")
@@ -125,19 +98,39 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["awaiting_group_add"] = False
 
+# --- Gruppen anzeigen ---
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
+
+    log_message(f"🔍 DEBUG: Gruppenabfrage für {bot_name}: {groups}")
+
+    if groups:
+        response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n" + "\n".join(f"- `{group[0]}`" for group in groups)
+    else:
+        response = f"❌ Keine Gruppen für {bot_name} eingetragen."
+
+    await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
+    ]))
+
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))  
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
+    application.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
-    log_message("🚀 Bot wurde gestartet und alle Handlers wurden gesetzt!")
+    log_message("🚀 Bot wurde gestartet (OHNE Passwortprüfung)!")
     application.run_polling()
 
 if __name__ == "__main__":
