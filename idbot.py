@@ -32,17 +32,20 @@ def debug_log(message):
 
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    debug_log("🔐 /start wurde aufgerufen.")
     await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
     context.user_data["awaiting_password"] = True
 
-# --- Passwortprüfung ---
+# --- Passwortprüfung (FIXED) ---
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    debug_log(f"🔑 Passwortprüfung gestartet mit Eingabe: {update.message.text}")
+
     if context.user_data.get("awaiting_password"):
         if update.message.text == PASSWORD:
             await update.message.reply_text("✅ Passwort korrekt! Zugriff gewährt.")
             context.user_data["authenticated"] = True
             context.user_data["awaiting_password"] = False
-            await show_bots(update, context)
+            await show_bots(update, context)  # 🔥 Sichert, dass `show_bots()` ausgeführt wird
         else:
             await update.message.reply_text("❌ Falsches Passwort! Zugriff verweigert.")
             context.user_data["awaiting_password"] = False
@@ -50,7 +53,7 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Alle Bots aus der Datenbank anzeigen ---
 async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     debug_log("📌 show_bots() wurde aufgerufen.")
-    
+
     if not context.user_data.get("authenticated"):
         await update.message.reply_text("🚫 Zugriff verweigert! Bitte starte mit /start und gib das richtige Passwort ein.")
         return
@@ -68,10 +71,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(bot, callback_data=f"manage_bot_{bot}")] for bot in bots]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if update.callback_query:
-        await update.callback_query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
-    else:
-        await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+    await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
 
 # --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,7 +112,7 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Zurück", callback_data="manage_bot_" + bot_name)]
     ]))
 
-# --- WICHTIG: `process_add_group()` WIRD JETZT 100% GETRIGGERT ---
+# --- `process_add_group()` FIXED ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     debug_log("🔥 process_add_group() wurde aufgerufen!")
 
@@ -153,7 +153,8 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^-?[0-9]+$"), process_add_group))  # ✅ Fix
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))  # ✅ FIXED
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex("^-?[0-9]+$"), process_add_group))  # ✅ FIXED
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
