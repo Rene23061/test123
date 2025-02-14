@@ -30,13 +30,6 @@ def debug_log(message):
     except Exception as e:
         print(f"❌ KANN NICHT SCHREIBEN: {e}")
 
-# 🔍 **TEST: Prüfen, ob Logs geschrieben werden können**
-try:
-    with open("debug_log.txt", "a") as debug_file:
-        debug_file.write("🔍 DEBUG-TEST: Log-Datei wurde erfolgreich geöffnet!\n")
-except Exception as e:
-    print(f"❌ KANN NICHT SCHREIBEN: {e}")
-
 # --- /start-Befehl mit Passwortabfrage ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔐 Bitte gib das Passwort ein, um fortzufahren:")
@@ -76,19 +69,36 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if update.callback_query:
-        await update.callback_query.edit_message_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+        await update.callback_query.message.edit_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
     else:
         await update.message.reply_text("🤖 Wähle einen Bot zur Verwaltung:", reply_markup=reply_markup)
+
+# --- Bot-Verwaltungsmenü nach Auswahl eines Bots ---
+async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = query.data.replace("manage_bot_", "")
+    context.user_data["selected_bot"] = bot_name  
+
+    keyboard = [
+        [InlineKeyboardButton("➕ Gruppe hinzufügen", callback_data="add_group")],
+        [InlineKeyboardButton("📋 Gruppen anzeigen", callback_data="list_groups")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="show_bots")]
+    ]
+    
+    await query.message.edit_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Gruppe zur Whitelist hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     debug_log("🔍 add_group() wurde aufgerufen.")
-    await query.edit_message_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
+    await query.message.edit_text("✍️ Sende die Gruppen-ID, die du hinzufügen möchtest.")
     context.user_data["awaiting_group_add"] = True
 
 # --- TEST: Prüfen, ob `process_add_group()` AUFGERUFEN WIRD ---
 async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_group_add"):
+        return
+
     chat_id = update.message.text.strip()
     bot_name = context.user_data.get("selected_bot")
     column_name = f"allow_{bot_name}"
@@ -131,6 +141,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
 
     application.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
+    application.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     application.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
 
     debug_log("🚀 Bot wurde gestartet und alle Handlers wurden gesetzt!")
