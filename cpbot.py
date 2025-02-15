@@ -1,6 +1,6 @@
 import re
 import sqlite3
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
@@ -25,27 +25,18 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüfen, ob die Gruppe erlaubt ist ---
-def is_group_allowed(chat_id):
-    cursor.execute("SELECT allow_AntiGruppenlinkBot FROM allowed_groups WHERE chat_id = ? AND allow_AntiGruppenlinkBot = 1", (chat_id,))
-    return cursor.fetchone() is not None
+# --- Prüfen, ob ein Nutzer Admin oder Gruppeninhaber ist ---
+async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
 
-# --- Sichere Methode zur Ermittlung von chat_id ---
-def get_chat_id(update: Update):
-    if update.message:
-        return update.message.chat_id
-    elif update.callback_query:
-        return update.callback_query.message.chat_id
-    return None
+    chat_member = await context.bot.get_chat_member(chat_id, user_id)
+    return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
-# --- Hauptmenü öffnen ---
+# --- Menü öffnen (nur für Admins & Gruppeninhaber) ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = get_chat_id(update)
-    if chat_id is None:
-        return
-
-    if not is_group_allowed(chat_id):
-        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt.") if update.message else await update.callback_query.message.edit_text("❌ Diese Gruppe ist nicht erlaubt.")
+    if not await is_admin(update, context):
+        await update.message.reply_text("⚠️ Nur Admins und der Gruppeninhaber können dieses Menü öffnen.")
         return
 
     keyboard = [
@@ -54,21 +45,44 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Link löschen", callback_data="delete_link")],
         [InlineKeyboardButton("📴 Menü schließen", callback_data="close")]
     ]
-    
-    if update.message:
-        await update.message.reply_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.callback_query.message.edit_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    await update.message.reply_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# --- Button-Handler für das Menü ---
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    user_id = query.from_user.id
+
+    # Prüfen, ob der Nutzer Admin oder Gruppeninhaber ist
+    chat_member = await context.bot.get_chat_member(chat_id, user_id)
+    if chat_member.status not in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]:
+        await query.answer("⚠️ Du hast keine Berechtigung, dieses Menü zu nutzen!", show_alert=True)
+        return
+
+    action = query.data
+    if action == "menu":
+        await show_menu(update, context)
+    elif action == "show_links":
+        await show_links(update, context)
+    elif action == "add_link":
+        await request_add_link(update, context)
+    elif action == "delete_link":
+        await request_delete_link(update, context)
+    elif action.startswith("confirm_delete"):
+        await confirm_delete(update, context)
+    elif action.startswith("delete"):
+        await delete_link(update, context)
+    elif action == "close":
+        await query.message.delete()
 
 # --- Links anzeigen ---
 async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = get_chat_id(update)
-    if chat_id is None:
-        return
+    chat_id = update.callback_query.message.chat_id
 
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
     links = cursor.fetchall()
-    
+
     text = "📋 **Whitelist dieser Gruppe:**\n" + "\n".join(f"- {link[0]}" for link in links) if links else "❌ Keine gespeicherten Links."
 
     keyboard = [[InlineKeyboardButton("⬅️ Zurück", callback_data="menu")]]
@@ -76,14 +90,14 @@ async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Link hinzufügen ---
 async def request_add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = get_chat_id(update)
+    chat_id = update.callback_query.message.chat_id
     context.user_data["awaiting_link"] = chat_id
 
     keyboard = [[InlineKeyboardButton("⬅️ Abbrechen", callback_data="menu")]]
     await update.callback_query.message.edit_text("✏️ Bitte sende den Link, den du hinzufügen möchtest.", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = get_chat_id(update)
+    chat_id = update.message.chat_id
     if context.user_data.get("awaiting_link") != chat_id:
         return
 
@@ -91,7 +105,7 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cursor.execute("INSERT OR IGNORE INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
     conn.commit()
-    
+
     context.user_data.pop("awaiting_link", None)
 
     keyboard = [[InlineKeyboardButton("⬅️ Zurück", callback_data="menu")]]
@@ -99,9 +113,7 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Link löschen ---
 async def request_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = get_chat_id(update)
-    if chat_id is None:
-        return
+    chat_id = update.callback_query.message.chat_id
 
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
     links = cursor.fetchall()
@@ -117,7 +129,7 @@ async def request_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     link = update.callback_query.data.split("|")[1]
-    
+
     keyboard = [
         [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"delete|{link}")],
         [InlineKeyboardButton("❌ Nein, zurück", callback_data="delete_link")]
@@ -125,10 +137,7 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.message.edit_text(f"⚠️ Soll der Link wirklich gelöscht werden?\n\n🔗 {link}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = get_chat_id(update)
-    if chat_id is None:
-        return
-
+    chat_id = update.callback_query.message.chat_id
     link = update.callback_query.data.split("|")[1]
 
     cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
@@ -137,32 +146,11 @@ async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.message.edit_text(f"✅ Link gelöscht: {link}")
     await request_delete_link(update, context)
 
-# --- Button-Handler für das Menü ---
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    action = update.callback_query.data
-
-    if action == "menu":
-        await show_menu(update, context)
-    elif action == "show_links":
-        await show_links(update, context)
-    elif action == "add_link":
-        await request_add_link(update, context)
-    elif action == "delete_link":
-        await request_delete_link(update, context)
-    elif action.startswith("confirm_delete"):
-        await confirm_delete(update, context)
-    elif action.startswith("delete"):
-        await delete_link(update, context)
-    elif action == "close":
-        await update.callback_query.message.delete()
-
-# --- Nachrichtenkontrolle (Fix: Nachricht wird nach dem Löschen wieder gesendet) ---
+# --- Nachrichtenkontrolle (Links löschen & Nachricht senden) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = get_chat_id(update)
-    if chat_id is None or context.user_data.get("awaiting_link") == chat_id:
-        return  
-
     message = update.message
+    chat_id = message.chat_id
+    user = message.from_user
     text = message.text or ""
 
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
@@ -170,13 +158,15 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
         if cursor.fetchone() is None:
-            await context.bot.delete_message(chat_id, message.message_id)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🚫 Hallo {message.from_user.full_name}, dein Gruppenlink wurde automatisch gelöscht.\n"
-                     "Bitte frage einen Admin, falls du Links posten möchtest.",
-                reply_to_message_id=message.message_id
-            )
+            try:
+                await context.bot.delete_message(chat_id, message.message_id)
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🚫 {user.full_name}, dein Gruppenlink wurde automatisch gelöscht.\n"
+                         "Bitte frage einen Admin, falls du Links posten möchtest."
+                )
+            except Exception as e:
+                print(f"⚠️ Fehler beim Löschen oder Senden der Nachricht: {e}")
 
 # --- Bot starten ---
 def main():
