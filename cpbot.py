@@ -1,7 +1,10 @@
 import re
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
+)
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
@@ -29,7 +32,7 @@ def is_whitelisted(chat_id, link):
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     return cursor.fetchone() is not None
 
-# --- Inline-Menü für Link-Verwaltung ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
@@ -38,79 +41,72 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=reply_markup, parse_mode="Markdown")
+
+    if update.message:
+        await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=reply_markup, parse_mode="Markdown")
+    elif update.callback_query:
+        await update.callback_query.message.edit_text("🔗 **Link-Verwaltung:**", reply_markup=reply_markup, parse_mode="Markdown")
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-    
     chat_id = query.message.chat_id
+    await query.answer()
 
     if query.data == "add_link":
-        await query.message.reply_text("Bitte sende den Link, den du hinzufügen möchtest:")
         context.user_data["action"] = "add_link"
-    
+        await query.message.reply_text("📩 Bitte sende den Link, den du hinzufügen möchtest:")
+
     elif query.data == "del_link":
-        await query.message.reply_text("Bitte sende den Link, den du löschen möchtest:")
         context.user_data["action"] = "del_link"
-    
+        await query.message.reply_text("📩 Bitte sende den Link, den du löschen möchtest:")
+
     elif query.data == "list_links":
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
         links = cursor.fetchall()
         if links:
-            response = "📋 **Whitelist dieser Gruppe:**\n" + "\n".join(f"- {link[0]}" for link in links)
+            response = "📋 **Whitelist:**\n" + "\n".join(f"- {link[0]}" for link in links)
         else:
-            response = "❌ Die Whitelist dieser Gruppe ist leer."
+            response = "❌ Die Whitelist ist leer."
         await query.message.reply_text(response, parse_mode="Markdown")
 
     elif query.data == "close_menu":
         await query.message.delete()
 
-# --- Link hinzufügen ---
-async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Nachrichten-Handler für Link-Aktionen ---
+async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-    link = update.message.text.strip()
+    text = update.message.text.strip()
 
-    if TELEGRAM_LINK_PATTERN.match(link):
-        try:
-            cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
+    if "action" in context.user_data:
+        action = context.user_data.pop("action")
+
+        if action == "add_link":
+            if TELEGRAM_LINK_PATTERN.match(text):
+                try:
+                    cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, text))
+                    conn.commit()
+                    await update.message.reply_text(f"✅ Link hinzugefügt: {text}")
+                except sqlite3.IntegrityError:
+                    await update.message.reply_text("⚠️ Link ist bereits in der Whitelist.")
+            else:
+                await update.message.reply_text("❌ Ungültiger Link! Bitte sende einen gültigen Telegram-Link.")
+
+        elif action == "del_link":
+            cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, text))
             conn.commit()
-            await update.message.reply_text(f"✅ Der Link wurde erfolgreich hinzugefügt: {link}")
-        except sqlite3.IntegrityError:
-            await update.message.reply_text("⚠️ Dieser Link ist bereits in der Whitelist.")
-    else:
-        await update.message.reply_text("❌ Ungültiger Link! Bitte sende einen gültigen Telegram-Link.")
+            if cursor.rowcount > 0:
+                await update.message.reply_text(f"✅ Link gelöscht: {text}")
+            else:
+                await update.message.reply_text("⚠️ Link war nicht in der Whitelist.")
+        return
 
-# --- Link löschen ---
-async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    link = update.message.text.strip()
-
-    cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    conn.commit()
-
-    if cursor.rowcount > 0:
-        await update.message.reply_text(f"✅ Der Link wurde gelöscht: {link}")
-    else:
-        await update.message.reply_text("⚠️ Der Link war nicht in der Whitelist.")
-
-# --- Nachrichtenprüfung und Link-Filter ---
-async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    chat_id = message.chat_id
-    text = message.text or ""
-
+    # Falls kein Befehl aktiv ist, Link überprüfen
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
-
         if not is_whitelisted(chat_id, link):
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🚫 Dieser Link ist nicht erlaubt und wurde entfernt: {link}",
-                reply_to_message_id=message.message_id
-            )
-            await context.bot.delete_message(chat_id, message.message_id)
+            await update.message.reply_text(f"🚫 Link nicht erlaubt: {link}")
+            await context.bot.delete_message(chat_id, update.message.message_id)
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
@@ -122,8 +118,8 @@ def main():
     # Callback für Inline-Buttons
     application.add_handler(CallbackQueryHandler(button_callback))
 
-    # Nachrichtenhandler für Links
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht))
+    # Nachrichten-Handler für Links
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
     print("🤖 Bot gestartet...")
     application.run_polling()
