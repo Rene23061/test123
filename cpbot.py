@@ -101,20 +101,6 @@ async def delete_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.edit_text("🔍 **Wähle einen Link zum Löschen:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-# --- Sicherheitsabfrage zum Löschen ---
-async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data.split("_")
-    chat_id = data[2]
-    link = "_".join(data[3:])  # Falls der Link Unterstriche enthält
-
-    keyboard = [
-        [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"delete_{chat_id}_{link}")],
-        [InlineKeyboardButton("❌ Nein, abbrechen", callback_data=f"delete_menu_{chat_id}")]
-    ]
-
-    await query.message.edit_text(f"⚠️ **Bist du sicher, dass du diesen Link löschen möchtest?**\n\n🔗 {link}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-
 # --- Link löschen ---
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -142,8 +128,11 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 
         # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
         if not is_whitelisted(chat_id, link):
-            await message.reply_text(f"🚫 Dein Link wurde gelöscht: {link}")
-            await message.delete()
+            await context.bot.delete_message(chat_id, message.message_id)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🚫 {user.full_name}, dein Link wurde gelöscht!\nNicht erlaubter Link: {link}"
+            )
             return
 
 # --- Hauptfunktion zum Starten des Bots ---
@@ -157,7 +146,6 @@ def main():
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
     application.add_handler(CallbackQueryHandler(show_links, pattern="show_links_"))
     application.add_handler(CallbackQueryHandler(delete_link_menu, pattern="delete_menu_"))
-    application.add_handler(CallbackQueryHandler(confirm_delete, pattern="confirm_delete_"))
     application.add_handler(CallbackQueryHandler(delete_link, pattern="delete_"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
