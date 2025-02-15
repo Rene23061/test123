@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
-# --- Regulärer Ausdruck für Telegram-Gruppenlinks (verbessert) ---
+# --- Verbesserter Regex für Telegram-Links ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_/]+")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
@@ -25,7 +25,7 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüft, ob ein Link in der Whitelist ist ---
+# --- Prüfen, ob ein Link in der Whitelist ist ---
 def is_whitelisted(chat_id, link):
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     return cursor.fetchone() is not None
@@ -41,11 +41,9 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     user = message.from_user
     text = message.text.strip()
 
-    # Nach Telegram-Gruppenlinks suchen
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
 
-        # Falls der Link nicht in der Whitelist ist, Nachricht löschen
         if not is_whitelisted(chat_id, link):
             try:
                 await message.delete()
@@ -123,7 +121,7 @@ def main():
     application.add_handler(CommandHandler("link", link_menu))
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
     application.add_handler(CallbackQueryHandler(show_links, pattern="show_links_"))
-    
+
     # Nachrichtenkontrolle
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
