@@ -3,7 +3,7 @@ import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
-# --- Telegram-Bot-Token (aus deinem ursprünglichen Code übernommen) ---
+# --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
@@ -77,7 +77,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "show_links":
-        # Alle Links der Gruppe anzeigen
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
         links = cursor.fetchall()
 
