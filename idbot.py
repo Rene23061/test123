@@ -89,8 +89,11 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1, group_name = ?
             """, (chat_id, group_name, group_name))
             conn.commit()
-            await update.message.reply_text(f"✅ Gruppe **{group_name}** (`{chat_id}`) wurde für {bot_name} hinzugefügt.",
-                                            parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+            await update.message.reply_text(
+                f"✅ Gruppe **{group_name}** (`{chat_id}`) wurde für {bot_name} hinzugefügt.",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück zum Hauptmenü", callback_data="show_bots")]])
+            )
         except Exception as e:
             await update.message.reply_text(f"⚠️ Fehler beim Eintragen: {e}")
 
@@ -131,17 +134,32 @@ async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_name = context.user_data["selected_bot"]
     column_name = f"allow_{bot_name.lower()}"
 
+    cursor.execute("SELECT group_name FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+    group_name = cursor.fetchone()
+
     cursor.execute(f"UPDATE allowed_groups SET {column_name} = 0 WHERE chat_id = ?", (chat_id,))
     conn.commit()
 
-    await query.message.edit_text(f"✅ Gruppe `{chat_id}` wurde für {bot_name} entfernt.", parse_mode="Markdown",
-                                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+    await query.message.edit_text(
+        f"✅ Gruppe **{group_name[0]}** (`{chat_id}`) wurde für {bot_name} entfernt.",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück zum Hauptmenü", callback_data="show_bots")]])
+    )
 
 # --- Bot starten ---
 def main():
     app = Application.builder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
+    app.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
+    app.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
+    app.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
+    app.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
+    app.add_handler(CallbackQueryHandler(delete_group, pattern="^confirm_remove_.*"))
+    app.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
+
+    print("🤖 Bot gestartet! Warte auf Befehle...")
     app.run_polling()
 
 if __name__ == "__main__":
