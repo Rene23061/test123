@@ -43,11 +43,21 @@ def get_menu():
     return InlineKeyboardMarkup(keyboard)
 
 # --- Menü anzeigen oder aktualisieren ---
-async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=get_menu(), parse_mode="Markdown")
-    elif update.callback_query:
-        await update.callback_query.message.edit_text("🔗 **Link-Verwaltung:**", reply_markup=get_menu(), parse_mode="Markdown")
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit_message_id=None):
+    if edit_message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=edit_message_id,
+                text="🔗 **Link-Verwaltung:**",
+                reply_markup=get_menu(),
+                parse_mode="Markdown"
+            )
+        except:
+            pass  # Falls Nachricht nicht bearbeitet werden kann (z. B. bereits gelöscht)
+    else:
+        message = await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=get_menu(), parse_mode="Markdown")
+        context.user_data["last_menu_message"] = message.message_id  # Speichern der letzten Menü-Nachricht
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,14 +67,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "add_link":
         context.user_data["action"] = "add_link"
-        await query.message.edit_text("📩 Bitte sende den Link, den du hinzufügen möchtest:", reply_markup=get_menu())
+        await query.message.edit_text("📩 Bitte sende den Link, den du hinzufügen möchtest:")
 
     elif query.data == "del_link":
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
         links = cursor.fetchall()
 
         if not links:
-            await query.message.edit_text("❌ Keine Links in der Whitelist.", reply_markup=get_menu(), parse_mode="Markdown")
+            await query.message.edit_text("❌ Keine Links in der Whitelist.", parse_mode="Markdown")
             return
 
         keyboard = [[InlineKeyboardButton(link[0], callback_data=f"confirm_del_{link[0]}")] for link in links]
@@ -89,9 +99,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
 
         if cursor.rowcount > 0:
-            await query.message.edit_text(f"✅ Link gelöscht: {link_to_delete}", reply_markup=get_menu(), parse_mode="Markdown")
+            await query.message.edit_text(f"✅ Link gelöscht: {link_to_delete}", parse_mode="Markdown")
         else:
-            await query.message.edit_text("⚠️ Link war nicht in der Whitelist.", reply_markup=get_menu(), parse_mode="Markdown")
+            await query.message.edit_text("⚠️ Link war nicht in der Whitelist.", parse_mode="Markdown")
+
+        # Menü aktualisieren
+        await show_menu(update, context, query.message.message_id)
 
     elif query.data == "list_links":
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
@@ -103,7 +116,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(response, reply_markup=get_menu(), parse_mode="Markdown")
 
     elif query.data == "back_to_menu":
-        await show_menu(update, context)
+        await show_menu(update, context, query.message.message_id)
 
     elif query.data == "close_menu":
         await query.message.delete()
@@ -128,7 +141,15 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("⚠️ Link ist bereits in der Whitelist.")
             else:
                 await update.message.reply_text("❌ Ungültiger Link! Bitte sende einen gültigen Telegram-Link.")
-            return await show_menu(update, context)
+
+            # Altes Menü schließen und ein neues öffnen
+            if "last_menu_message" in context.user_data:
+                try:
+                    await context.bot.delete_message(chat_id, context.user_data["last_menu_message"])
+                except:
+                    pass  # Falls die Nachricht bereits gelöscht wurde
+
+            await show_menu(update, context)
 
     # Falls kein Befehl aktiv ist, Link überprüfen
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
