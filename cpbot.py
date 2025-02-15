@@ -32,7 +32,6 @@ def is_group_allowed(chat_id):
 
 # --- Sichere Methode zur Ermittlung von chat_id ---
 def get_chat_id(update: Update):
-    """Versucht, die chat_id sicher zu ermitteln."""
     if update.message:
         return update.message.chat_id
     elif update.callback_query:
@@ -43,7 +42,7 @@ def get_chat_id(update: Update):
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = get_chat_id(update)
     if chat_id is None:
-        return  # Keine gültige Chat-ID gefunden
+        return
 
     if not is_group_allowed(chat_id):
         await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt.") if update.message else await update.callback_query.message.edit_text("❌ Diese Gruppe ist nicht erlaubt.")
@@ -165,14 +164,15 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         link = match.group(0)
 
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-        if cursor.fetchone() is None:
+        link_in_whitelist = cursor.fetchone()
+
+        if link_in_whitelist is None:
             await context.bot.delete_message(chat_id, message.message_id)
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=f"🚫 Link von {message.from_user.full_name} wurde gelöscht.",
                 reply_to_message_id=message.message_id
             )
-            return
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
@@ -186,7 +186,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
-    print("🤖 Bot gestartet und arbeitet jetzt korrekt!")
+    print("🤖 Bot gestartet und überwacht Telegram-Links!")
     application.run_polling()
 
 if __name__ == "__main__":
