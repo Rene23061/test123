@@ -35,8 +35,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📋 **Hauptmenü**\nWähle ein Menü:", reply_markup=reply_markup, parse_mode="Markdown")
 
-# --- Menü: Links anzeigen ---
-async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Menü 1: Links anzeigen ---
+async def show_links_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
     await query.answer()
@@ -45,7 +45,7 @@ async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     links = cursor.fetchall()
 
     if links:
-        response = "📋 **Whitelist:**\n" + "\n".join(f"- {link[0]}" for link in links)
+        response = "📋 **Gespeicherte Links:**\n" + "\n".join(f"- {link[0]}" for link in links)
     else:
         response = "❌ Keine gespeicherten Links."
 
@@ -55,7 +55,7 @@ async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Menü: Link hinzufügen ---
+# --- Menü 2: Link hinzufügen ---
 async def add_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -65,13 +65,12 @@ async def add_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]))
     context.user_data["awaiting_link"] = True  # Wartezustand aktivieren
 
-# --- Link hinzufügen (Speicherung) ---
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     link = update.message.text.strip()
 
     if not context.user_data.get("awaiting_link"):
-        return  # Nachricht ignorieren
+        return  
 
     if not TELEGRAM_LINK_PATTERN.match(link):
         await update.message.reply_text("❌ Ungültiger Link.")
@@ -81,9 +80,9 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
     await update.message.reply_text(f"✅ Link gespeichert:\n🔗 {link}")
-    context.user_data["awaiting_link"] = False  # Wartezustand deaktivieren
+    context.user_data["awaiting_link"] = False  
 
-# --- Menü: Link löschen ---
+# --- Menü 3: Link löschen ---
 async def delete_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
@@ -104,7 +103,6 @@ async def delete_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close_delete_link")])
     await query.edit_message_text("❌ **Wähle einen Link zum Löschen:**", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Link löschen bestätigen ---
 async def confirm_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
@@ -131,7 +129,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     text = message.text or ""
 
     if context.user_data.get("awaiting_link"):
-        return  # Keine Link-Prüfung im Hinzufügen-Menü
+        return  
 
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
@@ -140,7 +138,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         result = cursor.fetchone()
 
         if result:
-            return  # Link ist erlaubt
+            return  
 
         await context.bot.send_message(chat_id, text=f"🚫 Dein Link wurde gelöscht!", reply_to_message_id=message.message_id)
         await context.bot.delete_message(chat_id, message.message_id)
@@ -155,7 +153,7 @@ def main():
     application.add_handler(CommandHandler("link", show_main_menu))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
 
-    application.add_handler(CallbackQueryHandler(show_links, pattern="^menu_show_links$"))
+    application.add_handler(CallbackQueryHandler(show_links_menu, pattern="^menu_show_links$"))
     application.add_handler(CallbackQueryHandler(add_link_menu, pattern="^menu_add_link$"))
     application.add_handler(CallbackQueryHandler(delete_link_menu, pattern="^menu_delete_link$"))
     application.add_handler(CallbackQueryHandler(confirm_delete_link, pattern="^delete_confirm\\|"))
@@ -163,7 +161,6 @@ def main():
 
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
-    print("🤖 Bot gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
