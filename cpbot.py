@@ -32,14 +32,6 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüfen, ob ein Link in der Whitelist ist ---
-def is_whitelisted(chat_id, link):
-    logging.debug(f"🔍 Prüfe, ob {link} in der Whitelist von {chat_id} ist...")
-    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    result = cursor.fetchone()
-    logging.debug(f"📋 Whitelist-Check Ergebnis: {result}")
-    return result is not None
-
 # --- Menü mit Schließen-Button ---
 async def link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -66,14 +58,18 @@ async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = int(query.data.split("_")[-1])
     logging.info(f"📌 Link-Hinzufügen gestartet in Chat {chat_id}")
 
-    context.user_data["waiting_for_link"] = chat_id  # Richtig speichern!
+    context.user_data["waiting_for_link"] = chat_id  # WICHTIG: Hier wird der Status gespeichert!
+    logging.debug(f"📝 `waiting_for_link` gesetzt auf {chat_id}")
+
     await query.message.edit_text("✏️ Bitte sende mir den **Link**, den du zur Whitelist hinzufügen möchtest.")
 
 # --- Link speichern (Fix für Datenbank) ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.user_data.get("waiting_for_link")
+
     if not chat_id:
-        logging.warning("⚠️ Kein Chat für Link-Speicherung erkannt. Abbruch.")
+        logging.error("❌ `waiting_for_link` ist `None`. Der Bot speichert nichts!")
+        await update.message.reply_text("⚠️ Fehler: Keine Gruppe erkannt. Bitte starte /link erneut.")
         return
 
     link = update.message.text.strip()
@@ -125,6 +121,14 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
             except Exception as e:
                 logging.error(f"⚠️ Fehler beim Löschen der Nachricht: {e}")
 
+# --- Prüfen, ob ein Link in der Whitelist ist ---
+def is_whitelisted(chat_id, link):
+    logging.debug(f"🔍 Prüfe, ob {link} in der Whitelist von {chat_id} ist...")
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+    result = cursor.fetchone()
+    logging.debug(f"📋 Whitelist-Check Ergebnis: {result}")
+    return result is not None
+
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     application = Application.builder().token(TOKEN).build()
@@ -132,8 +136,8 @@ def main():
     application.add_handler(CommandHandler("link", link_menu))
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
     application.add_handler(CallbackQueryHandler(close_menu, pattern="close_menu"))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(TELEGRAM_LINK_PATTERN), kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(TELEGRAM_LINK_PATTERN), kontrolliere_nachricht))
 
     print("🤖 Anti-Gruppenlink-Bot gestartet...")
     application.run_polling()
