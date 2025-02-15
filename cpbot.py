@@ -134,6 +134,30 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_link_menu(update, context)
     return ConversationHandler.END
 
+# --- Nachrichtenkontrolle ---
+async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+
+    if not is_group_allowed(chat_id):
+        return
+
+    user = message.from_user
+    user_display_name = user.username if user.username else user.full_name
+    text = message.text or ""
+
+    for match in TELEGRAM_LINK_PATTERN.finditer(text):
+        link = match.group(0)
+
+        cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+        if cursor.fetchone() is None:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🚫 Hallo {user_display_name}, dein Link wurde automatisch gelöscht.",
+                reply_to_message_id=message.message_id
+            )
+            await context.bot.delete_message(chat_id, message.message_id)
+
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     global conn, cursor
@@ -143,14 +167,6 @@ def main():
 
     application.add_handler(CommandHandler("link", show_link_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
-
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_callback, pattern="add_link")],
-        states={AWAITING_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_link)]},
-        fallbacks=[]
-    )
-    application.add_handler(conv_handler)
-
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
     print("🤖 Bot gestartet...")
