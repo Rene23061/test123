@@ -146,7 +146,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # Befehle
-    application.add_handler(CommandHandler("linkmenü", show_menu))
+    application.add_handler(CommandHandler("linkbot", show_menu))
     
     # Callback für Inline-Buttons
     application.add_handler(CallbackQueryHandler(button_callback))
