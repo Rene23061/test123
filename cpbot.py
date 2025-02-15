@@ -34,7 +34,7 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_member = await context.bot.get_chat_member(chat_id, user_id)
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
-# --- Menü öffnen (nur für Admins & Gruppeninhaber) ---
+# --- Menü öffnen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("⚠️ Nur Admins und der Gruppeninhaber können dieses Menü öffnen.")
@@ -87,7 +87,7 @@ async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("⬅️ Zurück", callback_data="menu")]]
     await update.callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Link hinzufügen ---
+# --- Link hinzufügen (ohne sofortige Löschung) ---
 async def request_add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.callback_query.message.chat_id
     context.user_data["awaiting_link"] = chat_id
@@ -110,7 +110,7 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("⬅️ Zurück zum Menü", callback_data="menu")]]
     await update.message.reply_text(f"✅ Link hinzugefügt: {link}", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Link löschen ---
+# --- Link löschen (Buttons reagieren korrekt) ---
 async def request_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.callback_query.message.chat_id
 
@@ -136,12 +136,15 @@ async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("⬅️ Zurück zum Menü", callback_data="menu")]]
     await update.callback_query.message.edit_text(f"✅ Link gelöscht: {link}", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Nachrichtenkontrolle (Fix: Name ist jetzt klickbar) ---
+# --- Nachrichtenkontrolle (Fix: Name ist klickbar, Eintragen deaktiviert Kontrolle) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
     user = message.from_user
     text = message.text or ""
+
+    if context.user_data.get("awaiting_link") == chat_id:
+        return  # Während des Eintragens keine Prüfung!
 
     username = f"[@{user.username}](tg://user?id={user.id})" if user.username else f"[{user.full_name}](tg://user?id={user.id})"
 
