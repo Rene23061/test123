@@ -20,8 +20,8 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS allowed_groups (
             chat_id INTEGER PRIMARY KEY,
-            allow_sbot INTEGER DEFAULT 0,
-            allow_idbot INTEGER DEFAULT 0
+            allow_SystemCleanerBot INTEGER DEFAULT 0,
+            allow_MediaOnlyBot INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -29,9 +29,9 @@ def init_db():
 
 conn, cursor = init_db()
 
-# Prüft, ob eine Gruppe erlaubt ist
+# Prüft, ob eine Gruppe für den SystemCleanerBot erlaubt ist
 def is_group_allowed(chat_id):
-    cursor.execute("SELECT allow_sbot FROM allowed_groups WHERE chat_id = ? AND allow_sbot = 1", (chat_id,))
+    cursor.execute("SELECT allow_SystemCleanerBot FROM allowed_groups WHERE chat_id = ? AND allow_SystemCleanerBot = 1", (chat_id,))
     return cursor.fetchone() is not None
 
 async def delete_system_messages(update: Update, context: CallbackContext):
