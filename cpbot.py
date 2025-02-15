@@ -1,6 +1,6 @@
 import re
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
@@ -17,6 +17,12 @@ def init_db():
     conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS allowed_groups (
+            chat_id INTEGER PRIMARY KEY,
+            allow_AntiGruppenlinkBot INTEGER DEFAULT 0
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS whitelist (
             chat_id INTEGER,
             link TEXT UNIQUE
@@ -26,6 +32,16 @@ def init_db():
     return conn, cursor
 
 conn, cursor = init_db()
+
+# --- Prüfen, ob die Gruppe für den Bot erlaubt ist ---
+def is_group_allowed(chat_id):
+    cursor.execute("SELECT allow_AntiGruppenlinkBot FROM allowed_groups WHERE chat_id = ? AND allow_AntiGruppenlinkBot = 1", (chat_id,))
+    return cursor.fetchone() is not None
+
+# --- Prüfen, ob ein Nutzer Admin/Inhaber ist ---
+async def is_admin(update: Update, user_id: int):
+    chat = await update.effective_chat.get_member(user_id)
+    return chat.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
 # --- Prüfen, ob ein Link in der Whitelist steht ---
 def is_whitelisted(chat_id, link):
@@ -42,28 +58,32 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen oder aktualisieren ---
-async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit_message_id=None):
-    if edit_message_id:
-        try:
-            await context.bot.edit_message_text(
-                chat_id=update.effective_chat.id,
-                message_id=edit_message_id,
-                text="🔗 **Link-Verwaltung:**",
-                reply_markup=get_menu(),
-                parse_mode="Markdown"
-            )
-        except:
-            pass  # Falls Nachricht nicht bearbeitet werden kann (z. B. bereits gelöscht)
-    else:
-        message = await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=get_menu(), parse_mode="Markdown")
-        context.user_data["last_menu_message"] = message.message_id  # Speichern der letzten Menü-Nachricht
+# --- Menü anzeigen (nur für Admins) ---
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+
+    if not is_group_allowed(chat_id):
+        await update.message.reply_text("❌ Dieser Bot ist für diese Gruppe nicht aktiviert.")
+        return
+
+    if not await is_admin(update, user_id):
+        await update.message.reply_text("⛔ Nur Admins können dieses Menü nutzen.")
+        return
+
+    message = await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=get_menu(), parse_mode="Markdown")
+    context.user_data["last_menu_message"] = message.message_id
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
+    user_id = query.from_user.id
     await query.answer()
+
+    if not await is_admin(update, user_id):
+        await query.message.reply_text("⛔ Nur Admins können dieses Menü nutzen.")
+        return
 
     if query.data == "add_link":
         context.user_data["action"] = "add_link"
@@ -103,8 +123,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.message.edit_text("⚠️ Link war nicht in der Whitelist.", parse_mode="Markdown")
 
-        # Menü aktualisieren
-        await show_menu(update, context, query.message.message_id)
+        await show_menu(update, context)
 
     elif query.data == "list_links":
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
@@ -116,7 +135,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(response, reply_markup=get_menu(), parse_mode="Markdown")
 
     elif query.data == "back_to_menu":
-        await show_menu(update, context, query.message.message_id)
+        await show_menu(update, context)
 
     elif query.data == "close_menu":
         await query.message.delete()
@@ -126,7 +145,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text.strip()
     user = update.message.from_user
-    user_mention = f"[{user.first_name}](tg://user?id={user.id})"
+    username = f"@{user.username}" if user.username else f"[{user.first_name}](tg://user?id={user.id})"
 
     if "action" in context.user_data:
         action = context.user_data.pop("action")
@@ -142,21 +161,13 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text("❌ Ungültiger Link! Bitte sende einen gültigen Telegram-Link.")
 
-            # Altes Menü schließen und ein neues öffnen
-            if "last_menu_message" in context.user_data:
-                try:
-                    await context.bot.delete_message(chat_id, context.user_data["last_menu_message"])
-                except:
-                    pass  # Falls die Nachricht bereits gelöscht wurde
-
             await show_menu(update, context)
 
-    # Falls kein Befehl aktiv ist, Link überprüfen
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
         if not is_whitelisted(chat_id, link):
             await update.message.reply_text(
-                f"🚫 {user_mention}, dein Link wurde entfernt. "
+                f"🚫 {username}, dein Link wurde entfernt. "
                 f"Bitte wende dich an einen Admin, wenn du Fragen hast.",
                 parse_mode="Markdown"
             )
@@ -165,17 +176,11 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     application = Application.builder().token(TOKEN).build()
-
-    # Befehle
     application.add_handler(CommandHandler("linkbot", show_menu))
-    
-    # Callback für Inline-Buttons
     application.add_handler(CallbackQueryHandler(button_callback))
-
-    # Nachrichten-Handler für Links
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    print("🤖 Bot gestartet...")
+    print("🤖 Sicherer Bot gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
