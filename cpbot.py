@@ -9,7 +9,7 @@ TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
 
-# --- Verbindung zur SQLite-Datenbank herstellen ---
+# --- Verbindung zur SQLite-Datenbank ---
 def init_db():
     conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -62,11 +62,11 @@ def get_links_from_db(chat_id):
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
     return [row[0] for row in cursor.fetchall()]
 
-# --- Befehl: /link (Menü öffnen) ---
+# --- Hauptmenü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     if not is_group_allowed(chat_id):
-        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
+        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt.")
         return
 
     keyboard = [
@@ -104,6 +104,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.message.edit_text("⚠️ Link nicht gefunden.")
 
+    elif query.data == "back":
+        await show_menu(update, context)  # Hauptmenü erneut anzeigen
+
     elif query.data == "close_menu":
         await query.message.delete()
 
@@ -120,8 +123,12 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
             if entity.type == "url":
                 link = message.text[entity.offset: entity.offset + entity.length]
                 if not is_whitelisted(chat_id, link):
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🚫 Dieser Link ist nicht erlaubt und wurde entfernt: {link}"
+                    )
                     await message.delete()
-                    await message.reply_text(f"🚫 Dieser Link ist nicht erlaubt und wurde entfernt: {link}")
+                    return
 
 # --- Link speichern, wenn Nutzer ihn sendet ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
