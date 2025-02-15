@@ -50,23 +50,24 @@ def add_link_to_db(chat_id, link):
 
 # --- Link speichern, wenn Nutzer ihn sendet ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "awaiting_link" in context.user_data:
-        chat_id = context.user_data["awaiting_link"]
-        link = update.message.text.strip()
+    chat_id = update.message.chat_id
+    link = update.message.text.strip()
 
-        logging.debug(f"📥 Erhaltener Link: {link} für Chat {chat_id}")
+    logging.debug(f"📥 Erhaltener Link: {link} für Chat {chat_id}")
 
-        if not TELEGRAM_LINK_PATTERN.match(link):
-            await update.message.reply_text("❌ Dies ist kein gültiger Telegram-Link.")
-            logging.warning(f"❌ Ungültiger Link erkannt: {link}")
-            return
+    if not TELEGRAM_LINK_PATTERN.match(link):
+        await update.message.reply_text("❌ Dies ist kein gültiger Telegram-Link.")
+        logging.warning(f"❌ Ungültiger Link erkannt: {link}")
+        return
 
-        if add_link_to_db(chat_id, link):
-            await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
-        else:
-            await update.message.reply_text(f"⚠️ **{link}** ist bereits in der Whitelist.")
+    if add_link_to_db(chat_id, link):
+        await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
+    else:
+        await update.message.reply_text(f"⚠️ **{link}** ist bereits in der Whitelist.")
 
-        del context.user_data["awaiting_link"]
+    # **Nach erfolgreicher Speicherung die Löschung unterdrücken**
+    context.user_data["awaiting_link"] = None
+    logging.debug("🟢 Link erfolgreich gespeichert, Filter deaktiviert.")
 
 # --- Nachrichten prüfen und ggf. löschen (ABER NICHT WENN EIN LINK EINGETRAGEN WIRD) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,7 +76,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     text = message.text
 
     # **WICHTIG:** Prüfen, ob wir gerade auf einen Link warten!
-    if "awaiting_link" in context.user_data and context.user_data["awaiting_link"] == chat_id:
+    if context.user_data.get("awaiting_link") == chat_id:
         logging.debug(f"⚠️ Nachricht wird ignoriert, da Link zur Whitelist hinzugefügt wird: {text}")
         return  # Nicht löschen, weil wir gerade einen Link speichern wollen!
 
