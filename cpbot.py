@@ -50,6 +50,12 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 
     user = message.from_user
     text = message.text.strip()
+
+    # --- Fix: Prüfen, ob der Bot auf eine Link-Eingabe wartet ---
+    if context.user_data.get("waiting_for_link") == chat_id:
+        logging.info(f"✋ Nachricht von {user.full_name} wird NICHT gelöscht, da der Bot auf einen Link wartet.")
+        return  # Nachricht ignorieren
+
     logging.info(f"📩 Nachricht empfangen: {text} von {user.full_name} (Chat-ID: {chat_id})")
 
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
@@ -88,7 +94,7 @@ async def link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Link hinzufügen: Fragt den Benutzer nach einem Link ---
 async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.data.split("_")[-1]
+    chat_id = int(query.data.split("_")[-1])
     logging.info(f"📌 Link-Hinzufügen gestartet in Chat {chat_id}")
 
     await query.message.edit_text("✏️ Bitte sende mir den **Link**, den du zur Whitelist hinzufügen möchtest.")
@@ -97,10 +103,13 @@ async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Link speichern ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.user_data.get("waiting_for_link")
+
     if not chat_id:
+        logging.warning("⚠️ Kein Chat für Link-Speicherung erkannt. Abbruch.")
         return
 
     link = update.message.text.strip()
+
     if not TELEGRAM_LINK_PATTERN.match(link):
         await update.message.reply_text("⚠️ Ungültiger Link! Bitte sende einen gültigen Telegram-Link.")
         return
