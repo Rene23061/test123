@@ -4,14 +4,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
-TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
+TOKEN = "DEIN_TELEGRAM_BOT_TOKEN"
 
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
-    conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
+    conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS whitelist (
@@ -28,15 +28,15 @@ conn, cursor = init_db()
 # --- Hauptmenü ---
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📋 Links anzeigen", callback_data="open_show_links")],
-        [InlineKeyboardButton("➕ Link hinzufügen", callback_data="open_add_link")],
-        [InlineKeyboardButton("❌ Link löschen", callback_data="open_delete_link")],
+        [InlineKeyboardButton("📋 Links anzeigen", callback_data="menu_show_links")],
+        [InlineKeyboardButton("➕ Link hinzufügen", callback_data="menu_add_link")],
+        [InlineKeyboardButton("❌ Link löschen", callback_data="menu_delete_link")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📋 **Hauptmenü**\nWähle ein Menü:", reply_markup=reply_markup, parse_mode="Markdown")
 
 # --- Menü: Links anzeigen ---
-async def show_links_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
     await query.answer()
@@ -45,13 +45,13 @@ async def show_links_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     links = cursor.fetchall()
 
     if links:
-        response = "📋 **Whitelist dieser Gruppe:**\n" + "\n".join(f"- {link[0]}" for link in links)
+        response = "📋 **Whitelist:**\n" + "\n".join(f"- {link[0]}" for link in links)
     else:
-        response = "❌ Die Whitelist ist leer."
+        response = "❌ Keine gespeicherten Links."
 
     keyboard = [
         [InlineKeyboardButton("🔙 Zurück", callback_data="main_menu")],
-        [InlineKeyboardButton("❌ Schließen", callback_data="close_menu")]
+        [InlineKeyboardButton("❌ Schließen", callback_data="close_show_links")]
     ]
     await query.edit_message_text(response, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -59,11 +59,11 @@ async def show_links_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("ℹ️ **Sende jetzt den neuen Link als Nachricht.**\n🔙 Drücke /cancel zum Abbrechen.", reply_markup=InlineKeyboardMarkup([
+    await query.edit_message_text("ℹ️ **Sende jetzt den neuen Link als Nachricht.**", reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Zurück", callback_data="main_menu")],
-        [InlineKeyboardButton("❌ Schließen", callback_data="close_menu")]
+        [InlineKeyboardButton("❌ Schließen", callback_data="close_add_link")]
     ]))
-    context.user_data["awaiting_link"] = True  # Wartet auf Link
+    context.user_data["awaiting_link"] = True  # Wartezustand aktivieren
 
 # --- Link hinzufügen (Speicherung) ---
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -71,10 +71,10 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     link = update.message.text.strip()
 
     if not context.user_data.get("awaiting_link"):
-        return  # Ignorieren, falls kein Link erwartet wird
+        return  # Nachricht ignorieren
 
     if not TELEGRAM_LINK_PATTERN.match(link):
-        await update.message.reply_text("❌ Ungültiger Link. Bitte sende einen gültigen Telegram-Link.")
+        await update.message.reply_text("❌ Ungültiger Link.")
         return
 
     cursor.execute("INSERT OR IGNORE INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
@@ -95,13 +95,13 @@ async def delete_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not links:
         await query.edit_message_text("❌ Keine Links zum Löschen.", reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Zurück", callback_data="main_menu")],
-            [InlineKeyboardButton("❌ Schließen", callback_data="close_menu")]
+            [InlineKeyboardButton("❌ Schließen", callback_data="close_delete_link")]
         ]))
         return
 
     keyboard = [[InlineKeyboardButton(link[0], callback_data=f"delete_confirm|{link[0]}")] for link in links]
     keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="main_menu")])
-    keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close_menu")])
+    keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close_delete_link")])
     await query.edit_message_text("❌ **Wähle einen Link zum Löschen:**", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Link löschen bestätigen ---
@@ -114,8 +114,8 @@ async def confirm_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     conn.commit()
     await query.edit_message_text(f"✅ Link gelöscht: {link}", reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Zurück", callback_data="delete_link")],
-        [InlineKeyboardButton("❌ Schließen", callback_data="close_menu")]
+        [InlineKeyboardButton("🔙 Zurück", callback_data="menu_delete_link")],
+        [InlineKeyboardButton("❌ Schließen", callback_data="close_delete_link")]
     ]))
 
 # --- Menü schließen ---
@@ -155,16 +155,14 @@ def main():
     application.add_handler(CommandHandler("link", show_main_menu))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
 
-    application.add_handler(CallbackQueryHandler(show_links_menu, pattern="^open_show_links$"))
-    application.add_handler(CallbackQueryHandler(add_link_menu, pattern="^open_add_link$"))
-    application.add_handler(CallbackQueryHandler(delete_link_menu, pattern="^open_delete_link$"))
+    application.add_handler(CallbackQueryHandler(show_links, pattern="^menu_show_links$"))
+    application.add_handler(CallbackQueryHandler(add_link_menu, pattern="^menu_add_link$"))
+    application.add_handler(CallbackQueryHandler(delete_link_menu, pattern="^menu_delete_link$"))
     application.add_handler(CallbackQueryHandler(confirm_delete_link, pattern="^delete_confirm\\|"))
-    application.add_handler(CallbackQueryHandler(show_main_menu, pattern="^main_menu$"))
-    application.add_handler(CallbackQueryHandler(close_menu, pattern="^close_menu$"))
+    application.add_handler(CallbackQueryHandler(close_menu, pattern="^close_.*$"))
 
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
-    print("🤖 Bot gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
