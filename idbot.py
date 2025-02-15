@@ -2,7 +2,7 @@ import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Telegram-Bot-Token ---
+# --- Telegram-Bot-Token (TESTTOKEN) ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
@@ -41,7 +41,7 @@ async def show_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Bot-Verwaltungsmenü ---
 async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    bot_name = query.data.replace("manage_bot_", "")
+    bot_name = query.data.replace("manage_bot_", "").lower()  # Erzwingt Kleinbuchstaben
     context.user_data["selected_bot"] = bot_name  
 
     keyboard = [
@@ -63,14 +63,19 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_group_add"):
         bot_name = context.user_data["selected_bot"]
         chat_id = update.message.text.strip()
-        column_name = f"allow_{bot_name}"
+
+        column_name = f"allow_{bot_name.lower()}"  # Spalte für den Bot
 
         try:
-            cursor.execute(f"INSERT INTO allowed_groups (chat_id, {column_name}) VALUES (?, 1)", (chat_id,))
+            cursor.execute(f"""
+                INSERT INTO allowed_groups (chat_id, {column_name}) 
+                VALUES (?, 1) 
+                ON CONFLICT(chat_id) DO UPDATE SET {column_name} = 1
+            """, (chat_id,))
             conn.commit()
-            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde dem Bot {bot_name} hinzugefügt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
-        except sqlite3.IntegrityError:
-            await update.message.reply_text(f"⚠️ Diese Gruppe ist bereits für {bot_name} eingetragen.")
+            await update.message.reply_text(f"✅ Gruppe {chat_id} wurde für {bot_name} hinzugefügt.")
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ Fehler beim Eintragen: {e}")
 
         context.user_data["awaiting_group_add"] = False
 
@@ -78,7 +83,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name}"
+    column_name = f"allow_{bot_name.lower()}"
 
     cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
     groups = cursor.fetchall()
@@ -91,12 +96,12 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("🔙 Abbrechen", callback_data=f"manage_bot_{bot_name}")])
     await query.message.edit_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- **Sicherheitsabfrage: Bestätigung vor dem Löschen** ---
+# --- **Bestätigung vor dem Löschen** ---
 async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.data.replace("confirm_remove_", "")
     bot_name = context.user_data["selected_bot"]
-    context.user_data["delete_group_id"] = chat_id  # Speichert die Gruppen-ID für Bestätigung
+    context.user_data["delete_group_id"] = chat_id  
 
     keyboard = [
         [InlineKeyboardButton("✅ Ja, löschen", callback_data="delete_group_confirmed")],
@@ -108,15 +113,14 @@ async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- **Löschen der Gruppe nach Bestätigung** ---
 async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = context.user_data.get("delete_group_id")  # Holt die gespeicherte Gruppen-ID
+    chat_id = context.user_data.get("delete_group_id")
     bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name}"
+    column_name = f"allow_{bot_name.lower()}"
 
     if chat_id:
-        cursor.execute(f"DELETE FROM allowed_groups WHERE chat_id = ? AND {column_name} = 1", (chat_id,))
+        cursor.execute(f"UPDATE allowed_groups SET {column_name} = 0 WHERE chat_id = ?", (chat_id,))
         conn.commit()
-
-        await query.message.edit_text(f"✅ Gruppe {chat_id} wurde erfolgreich aus {bot_name} entfernt.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+        await query.message.edit_text(f"✅ Gruppe {chat_id} wurde für {bot_name} entfernt.")
     else:
         await query.message.edit_text("⚠️ Fehler: Keine gültige Gruppen-ID gefunden.")
 
@@ -124,7 +128,7 @@ async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name}"
+    column_name = f"allow_{bot_name.lower()}"
 
     cursor.execute(f"SELECT chat_id FROM allowed_groups WHERE {column_name} = 1")
     groups = cursor.fetchall()
