@@ -108,7 +108,7 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.pop("awaiting_link", None)
 
-    keyboard = [[InlineKeyboardButton("⬅️ Zurück", callback_data="menu")]]
+    keyboard = [[InlineKeyboardButton("⬅️ Zurück zum Menü", callback_data="menu")]]
     await update.message.reply_text(f"✅ Link hinzugefügt: {link}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Link löschen ---
@@ -127,15 +127,6 @@ async def request_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await update.callback_query.message.edit_text("🗑 Wähle einen Link zum Löschen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    link = update.callback_query.data.split("|")[1]
-
-    keyboard = [
-        [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"delete|{link}")],
-        [InlineKeyboardButton("❌ Nein, zurück", callback_data="delete_link")]
-    ]
-    await update.callback_query.message.edit_text(f"⚠️ Soll der Link wirklich gelöscht werden?\n\n🔗 {link}", reply_markup=InlineKeyboardMarkup(keyboard))
-
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.callback_query.message.chat_id
     link = update.callback_query.data.split("|")[1]
@@ -143,15 +134,17 @@ async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     conn.commit()
 
-    await update.callback_query.message.edit_text(f"✅ Link gelöscht: {link}")
-    await request_delete_link(update, context)
+    keyboard = [[InlineKeyboardButton("⬅️ Zurück zum Menü", callback_data="menu")]]
+    await update.callback_query.message.edit_text(f"✅ Link gelöscht: {link}", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Nachrichtenkontrolle (Links löschen & Nachricht senden) ---
+# --- Nachrichtenkontrolle (Fix: Name ist jetzt klickbar) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
     user = message.from_user
     text = message.text or ""
+
+    username = f"[@{user.username}](tg://user?id={user.id})" if user.username else f"[{user.full_name}](tg://user?id={user.id})"
 
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
@@ -162,8 +155,9 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
                 await context.bot.delete_message(chat_id, message.message_id)
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"🚫 {user.full_name}, dein Gruppenlink wurde automatisch gelöscht.\n"
-                         "Bitte frage einen Admin, falls du Links posten möchtest."
+                    text=f"🚫 {username}, dein Gruppenlink wurde automatisch gelöscht.\n"
+                         "Bitte frage einen Admin, falls du Links posten möchtest.",
+                    parse_mode="Markdown"
                 )
             except Exception as e:
                 print(f"⚠️ Fehler beim Löschen oder Senden der Nachricht: {e}")
