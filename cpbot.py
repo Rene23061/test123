@@ -1,7 +1,7 @@
 import re
 import sqlite3
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
@@ -29,6 +29,16 @@ conn, cursor = init_db()
 def is_whitelisted(chat_id, link):
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     return cursor.fetchone() is not None
+
+# --- Hauptmenü (Wird nur über /menu oder /start geöffnet) ---
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("✅ Links anzeigen", callback_data="list_links")],
+        [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
+        [InlineKeyboardButton("❌ Link löschen", callback_data="del_link")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🔹 **Menü**\nWähle eine Aktion:", reply_markup=reply_markup, parse_mode="Markdown")
 
 # --- Befehl: /link (Link zur Whitelist hinzufügen) ---
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,17 +107,36 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
                 f"🚫 {user.first_name}, dein Link wurde gelöscht. Nicht erlaubt!"
             )
 
+# --- Button Callback (Verhindert Menü-Konflikte) ---
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = query.message.chat_id
+
+    if query.data == "list_links":
+        await list_links(update, context)
+    elif query.data == "add_link":
+        await query.message.reply_text("Bitte sende den Link als Nachricht.")
+    elif query.data == "del_link":
+        await query.message.reply_text("Bitte sende den zu löschenden Link.")
+
+    await query.answer()
+
 # --- Bot starten ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
     # Befehle
+    application.add_handler(CommandHandler("menu", show_menu))
+    application.add_handler(CommandHandler("start", show_menu))
     application.add_handler(CommandHandler("link", add_link))
     application.add_handler(CommandHandler("list", list_links))
     application.add_handler(CommandHandler("del", delete_link))
 
     # Nachrichten filtern
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht))
+
+    # Button-Handler
+    application.add_handler(CallbackQueryHandler(button_callback))
 
     print("🤖 Bot gestartet!")
     application.run_polling()
