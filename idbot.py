@@ -61,7 +61,22 @@ async def manage_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await query.message.edit_text(f"⚙️ Verwaltung für {bot_name}:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Gruppe zur Whitelist hinzufügen ---
+# --- Gruppen mit Namen anzeigen ---
+async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    bot_name = context.user_data["selected_bot"]
+    column_name = f"allow_{bot_name}"
+
+    cursor.execute(f"SELECT chat_id, group_name FROM allowed_groups WHERE {column_name} = 1")
+    groups = cursor.fetchall()
+
+    response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n"
+    response += "\n".join(f"- `{group[0]}` | **{group[1]}**" for group in groups if group[1] is not None)
+
+    await query.message.edit_text(response, parse_mode="Markdown",
+                                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
+
+# --- Gruppen hinzufügen ---
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.message.edit_text("✍️ Sende die **Gruppen-ID**.")
@@ -80,7 +95,7 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_name = context.user_data["selected_bot"]
         chat_id = context.user_data["new_group_id"]
         group_name = update.message.text.strip()
-        column_name = f"allow_{bot_name.lower()}"
+        column_name = f"allow_{bot_name}"
 
         try:
             cursor.execute(f"""
@@ -99,26 +114,11 @@ async def process_add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["awaiting_group_name"] = False
 
-# --- Gruppen mit Namen anzeigen ---
-async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name.lower()}"
-
-    cursor.execute(f"SELECT chat_id, group_name FROM allowed_groups WHERE {column_name} = 1")
-    groups = cursor.fetchall()
-
-    response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n"
-    response += "\n".join(f"- `{group[0]}` | **{group[1]}**" for group in groups if group[1] is not None)
-
-    await query.message.edit_text(response, parse_mode="Markdown",
-                                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data=f"manage_bot_{bot_name}")]]))
-
 # --- Gruppen entfernen ---
 async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name.lower()}"
+    column_name = f"allow_{bot_name}"
 
     cursor.execute(f"SELECT chat_id, group_name FROM allowed_groups WHERE {column_name} = 1")
     groups = cursor.fetchall()
@@ -132,7 +132,7 @@ async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.data.replace("confirm_remove_", "")
     bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name.lower()}"
+    column_name = f"allow_{bot_name}"
 
     cursor.execute("SELECT group_name FROM allowed_groups WHERE chat_id = ?", (chat_id,))
     group_name = cursor.fetchone()
