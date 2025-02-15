@@ -12,7 +12,7 @@ async def is_admin(update: Update, user_id: int):
     except:
         return False
 
-# --- Befehl: /id (Nur Admins/Gruppeninhaber) ---
+# --- Befehl: /id (Nur für Admins/Gruppeninhaber) ---
 async def get_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.effective_user.id
@@ -23,7 +23,7 @@ async def get_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = [
-        [InlineKeyboardButton("📋 In Zwischenablage kopieren", callback_data=f"copy_{chat_id}")],
+        [InlineKeyboardButton("📋 ID anzeigen", callback_data=f"show_{chat_id}")],
         [InlineKeyboardButton("❌ Schließen", callback_data="close")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -35,9 +35,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data.startswith("copy_"):
+    if query.data.startswith("show_"):
         chat_id = query.data.split("_")[1]
-        await query.answer(f"Gruppen-ID {chat_id} kopiert! ✅", show_alert=True)
+        await query.answer(f"Gruppen-ID: {chat_id}\n🔹 Halte gedrückt & kopiere die ID!", show_alert=True)
 
     elif query.data == "close":
         await query.message.delete()
