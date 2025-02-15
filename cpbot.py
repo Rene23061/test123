@@ -32,24 +32,25 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüfen, ob ein Link in der Whitelist ist ---
-def is_whitelisted(chat_id, link):
-    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    result = cursor.fetchone()
-    return result is not None
-
-# --- Befehl: /link (Öffnet das Menü zur Linkverwaltung) ---
+# --- Menü mit Schließen-Button ---
 async def link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     logging.info(f"📌 /link wurde empfangen in Chat {chat_id}")
 
     keyboard = [
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data=f"add_link_{chat_id}")],
-        [InlineKeyboardButton("📋 Link anzeigen/löschen", callback_data=f"show_links_{chat_id}")]
+        [InlineKeyboardButton("📋 Link anzeigen/löschen", callback_data=f"show_links_{chat_id}")],
+        [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
 
     await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     logging.debug("✅ Menü erfolgreich gesendet.")
+
+# --- Menü schließen ---
+async def close_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.message.delete()
+    await query.answer()
 
 # --- Link hinzufügen: Benutzer sendet einen Link ---
 async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,7 +61,7 @@ async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_text("✏️ Bitte sende mir den **Link**, den du zur Whitelist hinzufügen möchtest.")
     context.user_data["waiting_for_link"] = chat_id
 
-# --- Link speichern ---
+# --- Link speichern (Fix für Datenbank) ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.user_data.get("waiting_for_link")
     if not chat_id:
@@ -77,12 +78,13 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
         conn.commit()
-        await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
         logging.info(f"✅ Link erfolgreich gespeichert: {link}")
+
+        await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
+        context.user_data.pop("waiting_for_link", None)  # Lösche den Status nach erfolgreicher Speicherung
+
     except sqlite3.IntegrityError:
         await update.message.reply_text("⚠️ Dieser Link ist bereits in der Whitelist.")
-
-    context.user_data.pop("waiting_for_link", None)
 
 # --- Linkliste anzeigen ---
 async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -161,6 +163,7 @@ def main():
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
     application.add_handler(CallbackQueryHandler(show_links, pattern="show_links_"))
     application.add_handler(CallbackQueryHandler(delete_link, pattern="delete_"))
+    application.add_handler(CallbackQueryHandler(close_menu, pattern="close_menu"))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(TELEGRAM_LINK_PATTERN), kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
 
