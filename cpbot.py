@@ -1,8 +1,8 @@
 import re
 import sqlite3
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram import Update
+from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
@@ -13,8 +13,8 @@ logging.basicConfig(
     level=logging.DEBUG  # Ändere auf INFO, wenn weniger Logs gewünscht
 )
 
-# --- Verbesserter Regex für Telegram-Links ---
-TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_/]+")
+# --- Verbesserter Regex für Telegram-Links (fängt auch "+Invite"-Links ab) ---
+TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/([+a-zA-Z0-9_/]+)")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -32,14 +32,14 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüfen, ob ein Link in der Whitelist ist ---
+# --- Prüfen, ob ein Link in der Whitelist ist (mit Logging) ---
 def is_whitelisted(chat_id, link):
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     result = cursor.fetchone()
-    logging.debug(f"📋 Whitelist-Check für {link}: {'✅ Erlaubt' if result else '❌ Nicht erlaubt'}")
+    logging.debug(f"📋 Whitelist-Check: Gruppe={chat_id}, Link={link} → {'✅ Erlaubt' if result else '❌ Nicht erlaubt'}")
     return result is not None
 
-# --- Nachrichtenkontrolle & Link-Löschung ---
+# --- Nachrichtenkontrolle & Link-Löschung (mit erweiterten Logs) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -56,8 +56,8 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         logging.debug(f"🔍 Erkannter Telegram-Link: {link}")
 
         if not is_whitelisted(chat_id, link):
+            logging.warning(f"🚨 Unerlaubter Link erkannt! Lösche Nachricht von {user.full_name}: {link}")
             try:
-                logging.warning(f"🚨 Unerlaubter Link erkannt! Lösche Nachricht von {user.full_name}: {link}")
                 await message.delete()
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -67,6 +67,8 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
             except Exception as e:
                 logging.error(f"⚠️ Fehler beim Löschen der Nachricht: {e}")
             return
+        else:
+            logging.info(f"✅ Link ist erlaubt: {link}")
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
