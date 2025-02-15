@@ -1,6 +1,6 @@
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
@@ -62,15 +62,15 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute(f"SELECT chat_id, group_name FROM allowed_groups WHERE {column_name} = 1")
     groups = cursor.fetchall()
 
-    keyboard = [[InlineKeyboardButton(f"{group[1]} ({group[0]})", callback_data=f"confirm_remove_{group[0]}")] for group in groups]
+    keyboard = [[InlineKeyboardButton(f"{group[1]} ({group[0]})", callback_data=f"ask_confirm_remove_{group[0]}")] for group in groups]
     keyboard.append([InlineKeyboardButton("🔙 Abbrechen", callback_data=f"manage_bot_{bot_name}")])
 
     await query.message.edit_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Sicherheitsabfrage als Popup (Bestätigung vor dem Löschen) ---
-async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Sicherheitsabfrage als Popup (Ja/Nein) ---
+async def ask_confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.data.replace("confirm_remove_", "")
+    chat_id = query.data.replace("ask_confirm_remove_", "")
     bot_name = context.user_data["selected_bot"]
 
     cursor.execute("SELECT group_name FROM allowed_groups WHERE chat_id = ?", (chat_id,))
@@ -82,7 +82,7 @@ async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("❌ Abbrechen", callback_data="remove_group")]
         ]
         await query.message.edit_text(
-            f"⚠️ **Bist du sicher, dass du die Gruppe {group_name[0]} (`{chat_id}`) entfernen möchtest?**",
+            f"⚠️ **Sicherheitsfrage:**\nMöchtest du die Gruppe **{group_name[0]}** (`{chat_id}`) wirklich löschen?",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -100,7 +100,7 @@ async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
 
     await query.message.edit_text(
-        f"✅ Gruppe **{group_name[0]}** (`{chat_id}`) wurde für {bot_name} entfernt.",
+        f"✅ Gruppe **{group_name[0]}** (`{chat_id}`) wurde erfolgreich gelöscht.",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück zum Hauptmenü", callback_data="show_bots")]])
     )
@@ -112,7 +112,7 @@ def main():
     app.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     app.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     app.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
-    app.add_handler(CallbackQueryHandler(confirm_remove, pattern="^confirm_remove_.*"))
+    app.add_handler(CallbackQueryHandler(ask_confirm_remove, pattern="^ask_confirm_remove_.*"))
     app.add_handler(CallbackQueryHandler(delete_group, pattern="^delete_group_.*"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
