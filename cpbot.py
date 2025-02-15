@@ -27,8 +27,9 @@ conn, cursor = init_db()
 
 # --- Prüfen, ob ein Nutzer Admin oder Gruppeninhaber ist ---
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
+    """Überprüft, ob der Nutzer Admin oder Gruppeninhaber ist."""
+    chat_id = update.effective_chat.id if update.effective_chat else update.callback_query.message.chat_id
+    user_id = update.effective_user.id if update.effective_user else update.callback_query.from_user.id
 
     chat_member = await context.bot.get_chat_member(chat_id, user_id)
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
@@ -46,13 +47,14 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📴 Menü schließen", callback_data="close")]
     ]
 
-    await update.message.reply_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+    if update.message:
+        await update.message.reply_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif update.callback_query:
+        await update.callback_query.message.edit_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Button-Handler für das Menü ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.message.chat_id
-
     if not await is_admin(update, context):
         await query.answer("⚠️ Du hast keine Berechtigung, dieses Menü zu nutzen!", show_alert=True)
         return
