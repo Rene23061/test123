@@ -35,12 +35,12 @@ async def add_link_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.message.reply_text("Bitte sende den Link, den du zur Whitelist hinzufügen möchtest.")
-    context.user_data["adding_link"] = True  # Status für die Link-Eingabe setzen
+    context.user_data["adding_link"] = True
 
 # --- Nachrichtenhandler: Link speichern ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "adding_link" in context.user_data and context.user_data["adding_link"]:
-        chat_id = update.message.chat_id
+        chat_id = update.message.chat.id  # Korrektur: .chat_id in .chat.id geändert
         link = update.message.text.strip()
 
         cursor.execute("INSERT OR IGNORE INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
@@ -57,13 +57,13 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- /list Befehl: Alle Links anzeigen ---
 async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+    chat_id = update.message.chat.id
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
     links = cursor.fetchall()
 
     if links:
         keyboard = [[InlineKeyboardButton(link[0], url=link[0])] for link in links]
-        keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close")])  # Schließen-Button hinzufügen
+        keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("📋 **Whitelist dieser Gruppe:**", reply_markup=reply_markup)
     else:
@@ -71,13 +71,13 @@ async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- /del Befehl: Menü mit allen gespeicherten Links anzeigen ---
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+    chat_id = update.message.chat.id
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
     links = cursor.fetchall()
 
     if links:
         keyboard = [[InlineKeyboardButton(link[0], callback_data=f"delete_{link[0]}")] for link in links]
-        keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close")])  # Schließen-Button hinzufügen
+        keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Wähle einen Link zum Löschen:", reply_markup=reply_markup)
     else:
@@ -87,7 +87,7 @@ async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    link = query.data.replace("delete_", "")
+    link = query.data.replace("delete_", "", 1)  # Korrektur: Explizit nur 1x ersetzen
 
     keyboard = [
         [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"confirm_delete_{link}")],
@@ -101,19 +101,23 @@ async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def delete_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    link = query.data.replace("confirm_delete_", "")
-    chat_id = query.message.chat_id
+    link = query.data.replace("confirm_delete_", "", 1)
+    chat_id = query.message.chat.id  # Korrektur: query.message.chat_id → query.message.chat.id
 
+    # 🔴 **Fix: SQL-Abfrage für korrekte Löschung**
     cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     conn.commit()
 
-    keyboard = [
-        [InlineKeyboardButton("🗑 Weiteren Link löschen", callback_data="del")],
-        [InlineKeyboardButton("❌ Schließen", callback_data="close")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    if cursor.rowcount > 0:  # Überprüfen, ob eine Zeile gelöscht wurde
+        keyboard = [
+            [InlineKeyboardButton("🗑 Weiteren Link löschen", callback_data="del")],
+            [InlineKeyboardButton("❌ Schließen", callback_data="close")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.message.reply_text(f"✅ Der Link wurde gelöscht: {link}", reply_markup=reply_markup)
+        await query.message.reply_text(f"✅ Der Link wurde gelöscht: {link}", reply_markup=reply_markup)
+    else:
+        await query.message.reply_text(f"⚠️ Link nicht gefunden: {link}")
 
 # --- Callback: Schließen ---
 async def close(update: Update, context: ContextTypes.DEFAULT_TYPE):
