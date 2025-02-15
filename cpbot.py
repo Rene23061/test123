@@ -1,13 +1,20 @@
 import re
 import sqlite3
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
-# --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
-TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
+# --- Logging aktivieren ---
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.DEBUG
+)
+
+# --- Regulärer Ausdruck für Telegram-Links ---
+TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_/]+")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -25,10 +32,13 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüfen, ob der Link in der Whitelist ist ---
+# --- Prüfen, ob ein Link in der Whitelist ist ---
 def is_whitelisted(chat_id, link):
+    logging.debug(f"🔍 Überprüfe Link: {link} in Chat {chat_id}")
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    return cursor.fetchone() is not None
+    result = cursor.fetchone()
+    logging.debug(f"Whitelist-Check Ergebnis: {result}")
+    return result is not None
 
 # --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,20 +88,27 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     link = update.message.text.strip()
+    logging.info(f"📥 Link hinzufügen: {link} für Chat {chat_id}")
     cursor.execute("INSERT OR IGNORE INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
     conn.commit()
     await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.", parse_mode="Markdown")
     del context.user_data["awaiting_link"]
 
-# --- Nachrichtenkontrolle ---
+# --- Nachrichtenkontrolle (Link-Löschen) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
     text = message.text or ""
 
+    logging.info(f"📩 Erhalte Nachricht: {text}")
+
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
+        logging.info(f"🔗 Gefundener Link: {link}")
+
         if not is_whitelisted(chat_id, link):
+            logging.warning(f"🚨 Link {link} ist NICHT in der Whitelist! Lösche Nachricht {message.message_id}")
+
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=f"🚫 Dein Link wurde automatisch gelöscht!",
@@ -107,7 +124,8 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
     application.add_handler(CallbackQueryHandler(button_callback))
-    print("🤖 Bot gestartet...")
+
+    logging.info("🤖 Bot gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
