@@ -32,10 +32,10 @@ def is_group_allowed(chat_id):
 
 # --- Menü öffnen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+    chat_id = update.message.chat_id if update.message else update.callback_query.message.chat_id
 
     if not is_group_allowed(chat_id):
-        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt.")
+        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt.") if update.message else await update.callback_query.message.edit_text("❌ Diese Gruppe ist nicht erlaubt.")
         return
 
     keyboard = [
@@ -44,7 +44,10 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Link löschen", callback_data="delete_link")],
     ]
     
-    await update.message.reply_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+    if update.message:
+        await update.message.reply_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.callback_query.message.edit_text("📌 Link-Verwaltung:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Links anzeigen ---
 async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,7 +137,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action.startswith("delete"):
         await delete_link(update, context)
 
-# --- Nachrichtenkontrolle (Fix: Handler wird korrekt registriert) ---
+# --- Nachrichtenkontrolle ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
