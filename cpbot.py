@@ -112,6 +112,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text.strip()
+    user = update.message.from_user
+    user_mention = f"[{user.first_name}](tg://user?id={user.id})"
 
     if "action" in context.user_data:
         action = context.user_data.pop("action")
@@ -132,7 +134,11 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
         if not is_whitelisted(chat_id, link):
-            await update.message.reply_text(f"🚫 Link nicht erlaubt: {link}")
+            await update.message.reply_text(
+                f"🚫 {user_mention}, dein Link wurde entfernt. "
+                f"Bitte wende dich an einen Admin, wenn du Fragen hast.",
+                parse_mode="Markdown"
+            )
             await context.bot.delete_message(chat_id, update.message.message_id)
 
 # --- Hauptfunktion zum Starten des Bots ---
@@ -140,7 +146,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # Befehle
-    application.add_handler(CommandHandler("menu", show_menu))
+    application.add_handler(CommandHandler("linkmenü", show_menu))
     
     # Callback für Inline-Buttons
     application.add_handler(CallbackQueryHandler(button_callback))
