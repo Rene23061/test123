@@ -1,13 +1,13 @@
 import re
 import sqlite3
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
-# --- Besserer Regex für Telegram-Gruppenlinks ---
-TELEGRAM_LINK_PATTERN = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/[a-zA-Z0-9_/]+")
+# --- Verbesserter Regulärer Ausdruck für Telegram-Links ---
+TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_/]+")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -35,15 +35,13 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     message = update.message
     chat_id = message.chat_id
 
-    # Prüfen, ob die Nachricht überhaupt Text enthält
     if not message or not message.text:
         return
 
     user = message.from_user
-    user_display_name = user.username if user.username else user.full_name
     text = message.text.strip()
 
-    # Prüfen, ob ein Telegram-Link enthalten ist
+    # Nach Telegram-Gruppenlinks suchen
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
 
@@ -53,8 +51,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
                 await message.delete()
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"🚫 {user_display_name}, dein Link wurde gelöscht!\n"
-                         f"❌ Nicht erlaubter Link: {link}",
+                    text=f"🚫 {user.full_name}, dein Link wurde gelöscht!\n❌ Nicht erlaubter Link: {link}",
                     reply_to_message_id=message.message_id
                 )
             except Exception as e:
@@ -76,7 +73,7 @@ async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.data.split("_")[-1]
 
     await query.message.edit_text("✏️ Bitte sende mir den **Link**, den du zur Whitelist hinzufügen möchtest.")
-    context.user_data["waiting_for_link"] = chat_id  # Speichert, dass ein Link erwartet wird
+    context.user_data["waiting_for_link"] = chat_id
 
 # --- Link speichern ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,8 +106,6 @@ def main():
     application.add_handler(CommandHandler("link", link_menu))
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
-    
-    # Nachrichtenfilterung für alle nicht-Bot-Nachrichten
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht))
 
     print("🤖 Anti-Gruppenlink-Bot gestartet...")
