@@ -9,7 +9,7 @@ TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
 
-# --- Datenbank-Verbindung ---
+# --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
     conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -83,7 +83,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "add_link":
         await query.edit_message_text("ℹ️ Bitte sende den neuen Link als Nachricht.")
-        return AWAITING_LINK  # Wechselt in den Wartezustand für den Link
+        return AWAITING_LINK
 
     elif query.data == "delete_link":
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
@@ -134,7 +134,7 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_link_menu(update, context)
     return ConversationHandler.END
 
-# --- Nachrichtenkontrolle ---
+# --- Nachrichtenkontrolle (Fehlende Funktion) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
