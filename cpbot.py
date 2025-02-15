@@ -32,6 +32,14 @@ def init_db():
 
 conn, cursor = init_db()
 
+# --- Prüfen, ob ein Link in der Whitelist ist ---
+def is_whitelisted(chat_id, link):
+    logging.debug(f"🔍 Prüfe, ob {link} in der Whitelist von {chat_id} ist...")
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+    result = cursor.fetchone()
+    logging.debug(f"📋 Whitelist-Check Ergebnis: {result}")
+    return result is not None
+
 # --- Menü mit Schließen-Button ---
 async def link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -154,9 +162,6 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
-    global conn, cursor
-    conn, cursor = init_db()
-
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("link", link_menu))
@@ -164,7 +169,6 @@ def main():
     application.add_handler(CallbackQueryHandler(show_links, pattern="show_links_"))
     application.add_handler(CallbackQueryHandler(delete_link, pattern="delete_"))
     application.add_handler(CallbackQueryHandler(close_menu, pattern="close_menu"))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(TELEGRAM_LINK_PATTERN), kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
 
     print("🤖 Anti-Gruppenlink-Bot gestartet...")
