@@ -67,7 +67,7 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.edit_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Sicherheitsabfrage vor dem Löschen ---
+# --- Sicherheitsabfrage als große Chat-Nachricht ---
 async def ask_confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.data.replace("ask_confirm_remove_", "")
@@ -77,33 +77,30 @@ async def ask_confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE)
     group_name = cursor.fetchone()
 
     if group_name:
-        keyboard = [
-            [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"confirm_remove_{chat_id}")],
-            [InlineKeyboardButton("❌ Abbrechen", callback_data=f"remove_group")]
-        ]
-        await query.message.edit_text(
-            f"⚠️ **Sicherheitsabfrage**\n\nBist du sicher, dass du die Gruppe **{group_name[0]}** (`{chat_id}`) entfernen möchtest?",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+        context.user_data["pending_deletion"] = chat_id  # Speichert, welche Gruppe gelöscht werden soll
+        await query.message.delete()
+        await query.message.chat.send_message(
+            f"⚠️ **Sicherheitsabfrage**\n\nBist du sicher, dass du die Gruppe **{group_name[0]}** (`{chat_id}`) entfernen möchtest?\n\n"
+            "Bitte antworte mit **JA** oder **NEIN**."
         )
 
-async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    chat_id = query.data.replace("confirm_remove_", "")
-    bot_name = context.user_data["selected_bot"]
-    column_name = f"allow_{bot_name.lower()}"
+# --- Benutzerantwort auswerten ---
+async def handle_user_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_response = update.message.text.strip().lower()
 
-    cursor.execute("SELECT group_name FROM allowed_groups WHERE chat_id = ?", (chat_id,))
-    group_name = cursor.fetchone()
+    if "pending_deletion" in context.user_data:
+        chat_id = context.user_data["pending_deletion"]
+        bot_name = context.user_data["selected_bot"]
+        column_name = f"allow_{bot_name.lower()}"
 
-    cursor.execute(f"UPDATE allowed_groups SET {column_name} = 0 WHERE chat_id = ?", (chat_id,))
-    conn.commit()
+        if user_response == "ja":
+            cursor.execute(f"UPDATE allowed_groups SET {column_name} = 0 WHERE chat_id = ?", (chat_id,))
+            conn.commit()
+            await update.message.reply_text(f"✅ Die Gruppe (`{chat_id}`) wurde erfolgreich entfernt.")
+        else:
+            await update.message.reply_text("❌ Löschung abgebrochen.")
 
-    await query.message.edit_text(
-        f"✅ Gruppe **{group_name[0]}** (`{chat_id}`) wurde für {bot_name} entfernt.",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück zum Hauptmenü", callback_data="show_bots")]])
-    )
+        del context.user_data["pending_deletion"]  # Löscht den gespeicherten Wert
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -113,7 +110,7 @@ def main():
     app.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
     app.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
     app.add_handler(CallbackQueryHandler(ask_confirm_remove, pattern="^ask_confirm_remove_.*"))
-    app.add_handler(CallbackQueryHandler(delete_group, pattern="^confirm_remove_.*"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_response))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
     app.run_polling()
