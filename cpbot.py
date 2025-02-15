@@ -66,8 +66,8 @@ async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = int(query.data.split("_")[-1])
     logging.info(f"📌 Link-Hinzufügen gestartet in Chat {chat_id}")
 
+    context.user_data["waiting_for_link"] = chat_id  # Richtig speichern!
     await query.message.edit_text("✏️ Bitte sende mir den **Link**, den du zur Whitelist hinzufügen möchtest.")
-    context.user_data["waiting_for_link"] = chat_id
 
 # --- Link speichern (Fix für Datenbank) ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,42 +94,6 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except sqlite3.IntegrityError:
         await update.message.reply_text("⚠️ Dieser Link ist bereits in der Whitelist.")
 
-# --- Linkliste anzeigen ---
-async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    chat_id = int(query.data.split("_")[-1])
-    logging.info(f"📋 Linkliste für Chat {chat_id} wird abgerufen...")
-
-    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
-    links = cursor.fetchall()
-
-    if not links:
-        logging.warning(f"❌ Keine Links in der Whitelist für Chat {chat_id} gefunden!")
-        await query.message.edit_text("❌ Die Whitelist ist leer.")
-        return
-
-    keyboard = [[InlineKeyboardButton(f"🗑 {link[0]}", callback_data=f"delete_{chat_id}_{link[0]}")] for link in links]
-    keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data=f"link_menu_{chat_id}")])
-
-    await query.message.edit_text("📋 **Whitelist:**\n" + "\n".join(f"- {link[0]}" for link in links),
-                                  reply_markup=InlineKeyboardMarkup(keyboard),
-                                  parse_mode="Markdown")
-
-# --- Link löschen ---
-async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data.split("_")
-    chat_id = int(data[1])
-    link = "_".join(data[2:])
-
-    logging.info(f"🗑 Lösche Link {link} für Chat {chat_id}...")
-
-    cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    conn.commit()
-
-    await query.answer(f"✅ {link} wurde gelöscht.", show_alert=True)
-    await show_links(update, context)
-
 # --- Nachrichtenkontrolle & Link-Löschung ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -147,6 +111,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
+        logging.info(f"🔗 Erkannter Link in Nachricht: {link}")
 
         if not is_whitelisted(chat_id, link):
             logging.warning(f"🚨 Unerlaubter Link erkannt! Lösche Nachricht von {user.full_name}: {link}")
@@ -166,9 +131,8 @@ def main():
 
     application.add_handler(CommandHandler("link", link_menu))
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
-    application.add_handler(CallbackQueryHandler(show_links, pattern="show_links_"))
-    application.add_handler(CallbackQueryHandler(delete_link, pattern="delete_"))
     application.add_handler(CallbackQueryHandler(close_menu, pattern="close_menu"))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(TELEGRAM_LINK_PATTERN), kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
 
     print("🤖 Anti-Gruppenlink-Bot gestartet...")
