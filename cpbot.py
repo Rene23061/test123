@@ -4,14 +4,14 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ChatMem
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
-TOKEN = "DEIN_BOT_TOKEN_HIER"
+TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
 
 # --- Verbindung zur SQLite-Datenbank ---
 def init_db():
-    conn = sqlite3.connect("whitelist.db", check_same_thread=False)
+    conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS whitelist (
