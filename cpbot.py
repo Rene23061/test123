@@ -50,8 +50,8 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Button-Handler für das Menü ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-
     action = query.data
+
     if action == "menu":
         await show_menu(update, context)
     elif action == "show_links":
@@ -60,6 +60,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await request_add_link(update, context)
     elif action == "delete_link":
         await request_delete_link(update, context)
+    elif action.startswith("confirm_delete"):
+        await confirm_delete(update, context)
+    elif action.startswith("delete"):
+        await delete_link(update, context)
     elif action == "close":
         await query.message.delete()
 
@@ -103,7 +107,7 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await request_delete_link(update, context)
 
-# --- Link löschen ---
+# --- **Fix für klickbare Lösch-Buttons** ---
 async def request_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.callback_query.message.chat_id
 
@@ -119,42 +123,25 @@ async def request_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await update.callback_query.message.edit_text("🗑 Wähle einen Link zum Löschen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    link = query.data.split("|")[1]
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"delete|{link}")],
+        [InlineKeyboardButton("⬅️ Abbrechen", callback_data="delete_link")]
+    ]
+    await query.message.edit_text(f"⚠️ Soll der Link wirklich gelöscht werden?\n\n🔗 {link}", reply_markup=InlineKeyboardMarkup(keyboard))
+
 async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.callback_query.message.chat_id
-    link = update.callback_query.data.split("|")[1]
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    link = query.data.split("|")[1]
 
     cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     conn.commit()
 
     await request_delete_link(update, context)
-
-# --- Nachrichtenkontrolle ---
-async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    chat_id = message.chat_id
-    user = message.from_user
-    text = message.text or ""
-
-    if context.user_data.get("awaiting_link") == chat_id:
-        return  # Während des Eintragens keine Prüfung!
-
-    username = f"[@{user.username}](tg://user?id={user.id})" if user.username else f"[{user.full_name}](tg://user?id={user.id})"
-
-    for match in TELEGRAM_LINK_PATTERN.finditer(text):
-        link = match.group(0)
-
-        cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-        if cursor.fetchone() is None:
-            try:
-                await context.bot.delete_message(chat_id, message.message_id)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"🚫 {username}, dein Gruppenlink wurde automatisch gelöscht.\n"
-                         "Bitte frage einen Admin, falls du Links posten möchtest.",
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                print(f"⚠️ Fehler beim Löschen oder Senden der Nachricht: {e}")
 
 # --- Bot starten ---
 def main():
@@ -162,7 +149,6 @@ def main():
     application.add_handler(CommandHandler("link", show_menu))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht), group=-1)
     application.run_polling()
 
 if __name__ == "__main__":
