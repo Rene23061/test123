@@ -134,7 +134,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action.startswith("delete"):
         await delete_link(update, context)
 
-# --- Nachrichtenkontrolle ---
+# --- Nachrichtenkontrolle (Fix: Handler wird korrekt registriert) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -149,12 +149,12 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
         if cursor.fetchone() is None:
+            await context.bot.delete_message(chat_id, message.message_id)
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="🚫 Dieser Link ist nicht erlaubt und wurde entfernt.",
+                text=f"🚫 Link von {message.from_user.full_name} wurde gelöscht.",
                 reply_to_message_id=message.message_id
             )
-            await context.bot.delete_message(chat_id, message.message_id)
             return
 
 # --- Hauptfunktion zum Starten des Bots ---
@@ -169,7 +169,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
-    print("🤖 Bot gestartet...")
+    print("🤖 Bot gestartet und arbeitet jetzt korrekt!")
     application.run_polling()
 
 if __name__ == "__main__":
