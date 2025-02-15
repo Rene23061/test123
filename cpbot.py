@@ -25,6 +25,11 @@ def init_db():
 
 conn, cursor = init_db()
 
+# --- Prüft, ob ein Link in der Whitelist ist ---
+def is_whitelisted(chat_id, link):
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+    return cursor.fetchone() is not None
+
 # --- Befehl: /link (Öffnet das Menü zur Linkverwaltung) ---
 async def link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
@@ -123,6 +128,24 @@ async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer(f"✅ {link} wurde gelöscht.", show_alert=True)
     await delete_link_menu(update, context)
 
+# --- Nachrichtenkontrolle ---
+async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+
+    user = message.from_user
+    text = message.text or ""
+
+    # Nach Telegram-Gruppenlinks suchen
+    for match in TELEGRAM_LINK_PATTERN.finditer(text):
+        link = match.group(0)
+
+        # Wenn der Link nicht in der Whitelist steht, Nachricht löschen
+        if not is_whitelisted(chat_id, link):
+            await message.reply_text(f"🚫 Dein Link wurde gelöscht: {link}")
+            await message.delete()
+            return
+
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     global conn, cursor
@@ -137,6 +160,7 @@ def main():
     application.add_handler(CallbackQueryHandler(confirm_delete, pattern="confirm_delete_"))
     application.add_handler(CallbackQueryHandler(delete_link, pattern="delete_"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
     print("🤖 Anti-Gruppenlink-Bot gestartet...")
     application.run_polling()
