@@ -1,17 +1,10 @@
 import re
 import sqlite3
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters, ConversationHandler
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
-
-# --- Logging für Debugging ---
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-def debug_log(message):
-    logging.info(message)
 
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
@@ -54,7 +47,6 @@ async def is_admin_or_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # --- Hauptmenü ---
 async def show_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    debug_log(f"🔹 Hauptmenü aufgerufen für Chat {chat_id}")
 
     if not is_group_allowed(chat_id):
         await context.bot.send_message(chat_id, "❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
@@ -71,6 +63,8 @@ async def show_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
+    context.chat_data["menu_active"] = True  # Menü aktiv setzen
     await context.bot.send_message(chat_id, "📋 **Linkverwaltung**\nWähle eine Option:", reply_markup=reply_markup, parse_mode="Markdown")
 
 # --- Callback für Menü-Buttons ---
@@ -78,10 +72,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = update.effective_chat.id
     await query.answer()
-    debug_log(f"🔹 Callback erhalten: {query.data} in Chat {chat_id}")
 
     if query.data == "add_link":
-        debug_log(f"🔹 Link hinzufügen gestartet für Chat {chat_id}")
         await query.edit_message_text("ℹ️ Bitte sende den neuen Link als Nachricht.")
         return 1  # Wartet auf Benutzereingabe
 
@@ -89,6 +81,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_link_menu(update, context)
 
     elif query.data == "close_menu":
+        context.chat_data["menu_active"] = False  # Menü inaktiv setzen
         await query.edit_message_text("✅ Menü geschlossen.")
 
 # --- Link zur Whitelist hinzufügen ---
@@ -104,15 +97,13 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("INSERT OR IGNORE INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
     conn.commit()
 
-    # Überprüfen, ob der Link gespeichert wurde
+    # Direkt nach dem Speichern prüfen, ob der Link vorhanden ist
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     result = cursor.fetchone()
 
     if result:
-        debug_log(f"✅ Link wurde erfolgreich gespeichert: {link} für Chat {chat_id}")
         await update.message.reply_text(f"✅ Der Link wurde erfolgreich zur Whitelist hinzugefügt:\n🔗 {link}")
     else:
-        debug_log(f"⚠️ Fehler: Link konnte nicht gespeichert werden: {link}")
         await update.message.reply_text("⚠️ Fehler beim Speichern des Links. Bitte versuche es erneut.")
 
     await show_link_menu(update, context)
@@ -123,6 +114,10 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     message = update.message
     chat_id = message.chat_id
     text = message.text or ""
+
+    # **Link-Prüfung deaktivieren, wenn das Menü aktiv ist**
+    if context.chat_data.get("menu_active", False):
+        return
 
     if not is_group_allowed(chat_id):
         return
@@ -138,10 +133,8 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         result = cursor.fetchone()
 
         if result:
-            debug_log(f"✅ Erlaubter Link erkannt: {link} von {user_display_name}")
             return  # Link ist erlaubt, keine Aktion
 
-        debug_log(f"🚫 Nicht erlaubter Link entdeckt & gelöscht: {link} von {user_display_name}")
         await context.bot.send_message(
             chat_id=chat_id,
             text=f"🚫 Hallo {user_display_name}, dein Link wurde automatisch gelöscht.",
@@ -162,7 +155,6 @@ def main():
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
     print("🤖 Bot gestartet...")
-    debug_log("🤖 Bot wurde erfolgreich gestartet.")
     application.run_polling()
 
 if __name__ == "__main__":
