@@ -60,8 +60,38 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text("📩 Bitte sende den Link, den du hinzufügen möchtest:", reply_markup=get_menu())
 
     elif query.data == "del_link":
-        context.user_data["action"] = "del_link"
-        await query.message.edit_text("📩 Bitte sende den Link, den du löschen möchtest:", reply_markup=get_menu())
+        cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
+        links = cursor.fetchall()
+
+        if not links:
+            await query.message.edit_text("❌ Keine Links in der Whitelist.", reply_markup=get_menu(), parse_mode="Markdown")
+            return
+
+        keyboard = [[InlineKeyboardButton(link[0], callback_data=f"confirm_del_{link[0]}")] for link in links]
+        keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.message.edit_text("🗑 **Wähle einen Link zum Löschen:**", reply_markup=reply_markup, parse_mode="Markdown")
+
+    elif query.data.startswith("confirm_del_"):
+        link_to_delete = query.data.replace("confirm_del_", "")
+        keyboard = [
+            [InlineKeyboardButton("✅ Ja, löschen", callback_data=f"delete_{link_to_delete}")],
+            [InlineKeyboardButton("❌ Abbrechen", callback_data="del_link")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text(f"⚠️ Bist du sicher, dass du diesen Link löschen möchtest?\n\n🔗 {link_to_delete}",
+                                      reply_markup=reply_markup, parse_mode="Markdown")
+
+    elif query.data.startswith("delete_"):
+        link_to_delete = query.data.replace("delete_", "")
+        cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link_to_delete))
+        conn.commit()
+
+        if cursor.rowcount > 0:
+            await query.message.edit_text(f"✅ Link gelöscht: {link_to_delete}", reply_markup=get_menu(), parse_mode="Markdown")
+        else:
+            await query.message.edit_text("⚠️ Link war nicht in der Whitelist.", reply_markup=get_menu(), parse_mode="Markdown")
 
     elif query.data == "list_links":
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
@@ -71,6 +101,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             response = "❌ Die Whitelist ist leer."
         await query.message.edit_text(response, reply_markup=get_menu(), parse_mode="Markdown")
+
+    elif query.data == "back_to_menu":
+        await show_menu(update, context)
 
     elif query.data == "close_menu":
         await query.message.delete()
@@ -93,15 +126,6 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("⚠️ Link ist bereits in der Whitelist.")
             else:
                 await update.message.reply_text("❌ Ungültiger Link! Bitte sende einen gültigen Telegram-Link.")
-            return await show_menu(update, context)
-
-        elif action == "del_link":
-            cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, text))
-            conn.commit()
-            if cursor.rowcount > 0:
-                await update.message.reply_text(f"✅ Link gelöscht: {text}")
-            else:
-                await update.message.reply_text("⚠️ Link war nicht in der Whitelist.")
             return await show_menu(update, context)
 
     # Falls kein Befehl aktiv ist, Link überprüfen
