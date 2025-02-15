@@ -20,12 +20,6 @@ def init_db():
     conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS allowed_groups (
-            chat_id INTEGER PRIMARY KEY,
-            allow_AntiGruppenlinkBot INTEGER DEFAULT 0
-        )
-    """)
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS whitelist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER NOT NULL,
@@ -36,11 +30,6 @@ def init_db():
     return conn, cursor
 
 conn, cursor = init_db()
-
-# --- Prüfen, ob die Gruppe erlaubt ist ---
-def is_group_allowed(chat_id):
-    cursor.execute("SELECT allow_AntiGruppenlinkBot FROM allowed_groups WHERE chat_id = ? AND allow_AntiGruppenlinkBot = 1", (chat_id,))
-    return cursor.fetchone() is not None
 
 # --- Überprüfung, ob ein Link in der Whitelist ist ---
 def is_whitelisted(chat_id, link):
@@ -59,20 +48,56 @@ def add_link_to_db(chat_id, link):
         logging.warning(f"⚠️ Link bereits in der Whitelist: {link}")
         return False  # Link existiert bereits
 
-# --- Link aus der Whitelist entfernen ---
-def remove_link_from_db(chat_id, link):
-    cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    conn.commit()
-    return cursor.rowcount > 0
+# --- Link speichern, wenn Nutzer ihn sendet ---
+async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "awaiting_link" in context.user_data:
+        chat_id = context.user_data["awaiting_link"]
+        link = update.message.text.strip()
+
+        logging.debug(f"📥 Erhaltener Link: {link} für Chat {chat_id}")
+
+        if not TELEGRAM_LINK_PATTERN.match(link):
+            await update.message.reply_text("❌ Dies ist kein gültiger Telegram-Link.")
+            logging.warning(f"❌ Ungültiger Link erkannt: {link}")
+            return
+
+        if add_link_to_db(chat_id, link):
+            await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
+        else:
+            await update.message.reply_text(f"⚠️ **{link}** ist bereits in der Whitelist.")
+
+        del context.user_data["awaiting_link"]
+
+# --- Nachrichten prüfen und ggf. löschen (ABER NICHT WENN EIN LINK EINGETRAGEN WIRD) ---
+async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+    text = message.text
+
+    # **WICHTIG:** Prüfen, ob wir gerade auf einen Link warten!
+    if "awaiting_link" in context.user_data and context.user_data["awaiting_link"] == chat_id:
+        logging.debug(f"⚠️ Nachricht wird ignoriert, da Link zur Whitelist hinzugefügt wird: {text}")
+        return  # Nicht löschen, weil wir gerade einen Link speichern wollen!
+
+    logging.debug(f"📩 Nachricht erhalten: {text}")
+
+    for match in TELEGRAM_LINK_PATTERN.finditer(text):
+        link = match.group(0)
+        logging.debug(f"🔗 Erkannter Telegram-Link: {link}")
+
+        if not is_whitelisted(chat_id, link):
+            logging.info(f"❌ Link nicht erlaubt, wird gelöscht: {link}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🚫 Dieser Link ist nicht erlaubt und wurde entfernt: {link}"
+            )
+            await message.delete()
+            return
 
 # --- Hauptmenü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id if query else update.message.chat_id
-
-    if not is_group_allowed(chat_id):
-        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt.")
-        return
 
     keyboard = [
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
@@ -97,76 +122,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["awaiting_link"] = chat_id  # Warte auf Link von diesem Chat
         logging.debug(f"🟡 Warte auf einen Link für Chat {chat_id}...")
 
-    elif query.data == "show_links":
-        links = get_links_from_db(chat_id)
-        if not links:
-            await query.message.edit_text("❌ Die Whitelist ist leer.")
-        else:
-            keyboard = [[InlineKeyboardButton(f"❌ {link}", callback_data=f"delete_{link}")] for link in links]
-            keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back")])
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.message.edit_text(f"✅ Whitelist:\n" + "\n".join(links), reply_markup=reply_markup)
-
-    elif query.data.startswith("delete_"):
-        link_to_delete = query.data.replace("delete_", "")
-        if remove_link_from_db(chat_id, link_to_delete):
-            await query.message.edit_text(f"✅ Der Link wurde entfernt: {link_to_delete}")
-        else:
-            await query.message.edit_text("⚠️ Link nicht gefunden.")
-
-    elif query.data == "back":
-        await show_menu(update, context)
-
     elif query.data == "close_menu":
         await query.message.delete()
 
-# --- Nachricht prüfen und ggf. löschen ---
-async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    chat_id = message.chat_id
-    text = message.text
-
-    if not is_group_allowed(chat_id):
-        return
-
-    logging.debug(f"📩 Nachricht erhalten: {text}")
-
-    for match in TELEGRAM_LINK_PATTERN.finditer(text):
-        link = match.group(0)
-        logging.debug(f"🔗 Erkannter Telegram-Link: {link}")
-
-        if not is_whitelisted(chat_id, link):
-            logging.info(f"❌ Link nicht erlaubt, wird gelöscht: {link}")
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🚫 Dieser Link ist nicht erlaubt und wurde entfernt: {link}"
-            )
-            await message.delete()
-            return
-
-# --- Link speichern, wenn Nutzer ihn sendet ---
-async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "awaiting_link" in context.user_data:
-        chat_id = context.user_data["awaiting_link"]
-        link = update.message.text.strip()
-
-        logging.debug(f"📥 Erhaltener Link: {link} für Chat {chat_id}")
-
-        if not TELEGRAM_LINK_PATTERN.match(link):
-            await update.message.reply_text("❌ Dies ist kein gültiger Telegram-Link.")
-            logging.warning(f"❌ Ungültiger Link erkannt: {link}")
-            return
-
-        if add_link_to_db(chat_id, link):
-            await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
-        else:
-            await update.message.reply_text(f"⚠️ **{link}** ist bereits in der Whitelist.")
-
-        del context.user_data["awaiting_link"]
-
 # --- Bot starten ---
 def main():
-    init_db()
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("link", show_menu))
