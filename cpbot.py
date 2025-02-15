@@ -64,7 +64,12 @@ def get_links_from_db(chat_id):
 
 # --- Hauptmenü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+    query = update.callback_query
+    if query:
+        chat_id = query.message.chat_id
+    else:
+        chat_id = update.message.chat_id
+
     if not is_group_allowed(chat_id):
         await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt.")
         return
@@ -75,7 +80,11 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("📌 Wähle eine Option:", reply_markup=reply_markup)
+    
+    if query:
+        await query.message.edit_text("📌 Wähle eine Option:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("📌 Wähle eine Option:", reply_markup=reply_markup)
 
 # --- Callback-Funktion für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,7 +114,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_text("⚠️ Link nicht gefunden.")
 
     elif query.data == "back":
-        await show_menu(update, context)  # Hauptmenü erneut anzeigen
+        await show_menu(update, context)  # Zurück zum Hauptmenü
 
     elif query.data == "close_menu":
         await query.message.delete()
