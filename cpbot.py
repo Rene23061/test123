@@ -39,22 +39,22 @@ def is_group_allowed(chat_id):
 
 # --- Prüfen, ob ein Benutzer Admin oder Mitglied ist ---
 async def is_admin_or_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.message.chat
-    user = update.message.from_user
+    chat = update.effective_chat
+    user = update.effective_user
     member = await chat.get_member(user.id)
 
     return member.status in ["administrator", "creator", "member"]
 
 # --- Hauptmenü ---
 async def show_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+    chat_id = update.effective_chat.id
 
     if not is_group_allowed(chat_id):
-        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
+        await context.bot.send_message(chat_id, "❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
         return
 
     if not await is_admin_or_member(update, context):
-        await update.message.reply_text("🚫 Du hast keine Berechtigung, dieses Menü zu öffnen.")
+        await context.bot.send_message(chat_id, "🚫 Du hast keine Berechtigung, dieses Menü zu öffnen.")
         return
 
     keyboard = [
@@ -64,13 +64,12 @@ async def show_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("📋 **Linkverwaltung**\nWähle eine Option:", reply_markup=reply_markup, parse_mode="Markdown")
+    await context.bot.send_message(chat_id, "📋 **Linkverwaltung**\nWähle eine Option:", reply_markup=reply_markup, parse_mode="Markdown")
 
 # --- Callback für Menü-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = query.message.chat_id
-
+    chat_id = update.effective_chat.id
     await query.answer()
 
     if query.data == "show_links":
