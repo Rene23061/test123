@@ -22,24 +22,15 @@ async def get_group_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Nur Admins oder der Gruppeninhaber können diesen Befehl nutzen.")
         return
 
-    keyboard = [
-        [InlineKeyboardButton("📋 In Zwischenablage kopieren", callback_data=f"copy_{chat_id}")],
-        [InlineKeyboardButton("❌ Schließen", callback_data="close")]
-    ]
+    keyboard = [[InlineKeyboardButton("❌ Schließen", callback_data="close")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(f"📌 **Gruppen-ID:** `{chat_id}`", parse_mode="Markdown", reply_markup=reply_markup)
 
-# --- Callback-Funktion für Buttons ---
+# --- Callback-Funktion für den „Schließen“-Button ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-
-    if query.data.startswith("copy_"):
-        chat_id = query.data.split("_")[1]
-        await query.answer(f"Gruppen-ID: {chat_id} wurde kopiert! ✅\n🔹 Jetzt manuell einfügen.", show_alert=True)
-
-    elif query.data == "close":
+    if query.data == "close":
         await query.message.delete()
 
 # --- Hauptfunktion zum Starten des Bots ---
@@ -49,7 +40,7 @@ def main():
     # Befehl für Gruppen-ID (nur für Admins/Gruppeninhaber)
     application.add_handler(CommandHandler("id", get_group_id))
 
-    # Callback für die Buttons
+    # Callback für den „Schließen“-Button
     application.add_handler(CallbackQueryHandler(button_callback))
 
     print("🤖 ID-Bot gestartet...")
