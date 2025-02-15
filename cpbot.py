@@ -1,12 +1,12 @@
 import re
 import sqlite3
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
-# --- Verbesserter Regulärer Ausdruck für Telegram-Links ---
+# --- Regulärer Ausdruck für Telegram-Gruppenlinks (verbessert) ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/[a-zA-Z0-9_/]+")
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
@@ -95,6 +95,23 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.pop("waiting_for_link", None)
 
+# --- Whitelist anzeigen ---
+async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = query.data.split("_")[-1]
+
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
+    links = cursor.fetchall()
+
+    if not links:
+        await query.message.edit_text("❌ Keine Links in der Whitelist.")
+        return
+
+    link_list = "\n".join(f"- {link[0]}" for link in links)
+    keyboard = [[InlineKeyboardButton("🗑 Link löschen", callback_data=f"delete_menu_{chat_id}")]]
+
+    await query.message.edit_text(f"📋 **Whitelist:**\n{link_list}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
     global conn, cursor
@@ -102,11 +119,14 @@ def main():
 
     application = Application.builder().token(TOKEN).build()
 
-    # Befehle hinzufügen
+    # Befehle & Callback-Handler
     application.add_handler(CommandHandler("link", link_menu))
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
+    application.add_handler(CallbackQueryHandler(show_links, pattern="show_links_"))
+    
+    # Nachrichtenkontrolle
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
 
     print("🤖 Anti-Gruppenlink-Bot gestartet...")
     application.run_polling()
