@@ -1,66 +1,74 @@
-import logging
+import re
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
-# Setze den Test-Token ein
+# --- Telegram-Bot-Token ---
 TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
-# Logger einrichten
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s', level=logging.DEBUG
-)
+# --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
+TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
 
-# Datenbank initialisieren
+# --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
-    conn = sqlite3.connect("whitelist.db")
+    conn = sqlite3.connect("/root/cpkiller/whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS links (
+        CREATE TABLE IF NOT EXISTS allowed_groups (
+            chat_id INTEGER PRIMARY KEY,
+            allow_SystemCleanerBot INTEGER DEFAULT 0,
+            allow_AntiGruppenlinkBot INTEGER DEFAULT 0
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS whitelist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER NOT NULL,
             link TEXT NOT NULL UNIQUE
         )
     """)
     conn.commit()
-    conn.close()
+    return conn, cursor
 
-# Link in die Whitelist-Datenbank eintragen
+conn, cursor = init_db()
+
+# --- Prüfen, ob die Gruppe erlaubt ist ---
+def is_group_allowed(chat_id):
+    cursor.execute("SELECT allow_AntiGruppenlinkBot FROM allowed_groups WHERE chat_id = ? AND allow_AntiGruppenlinkBot = 1", (chat_id,))
+    return cursor.fetchone() is not None
+
+# --- Überprüfung, ob ein Link in der Whitelist ist ---
+def is_whitelisted(chat_id, link):
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+    return cursor.fetchone() is not None
+
+# --- Link zur Whitelist hinzufügen ---
 def add_link_to_db(chat_id, link):
-    conn = sqlite3.connect("whitelist.db")
-    cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO links (chat_id, link) VALUES (?, ?)", (chat_id, link))
+        cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
         conn.commit()
         return True
     except sqlite3.IntegrityError:
         return False  # Link existiert bereits
-    finally:
-        conn.close()
 
-# Link aus der Datenbank löschen
+# --- Link aus der Whitelist entfernen ---
 def remove_link_from_db(chat_id, link):
-    conn = sqlite3.connect("whitelist.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM links WHERE chat_id = ? AND link = ?", (chat_id, link))
+    cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     conn.commit()
-    conn.close()
+    return cursor.rowcount > 0
 
-# Alle Links einer Gruppe abrufen
+# --- Alle Links einer Gruppe abrufen ---
 def get_links_from_db(chat_id):
-    conn = sqlite3.connect("whitelist.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT link FROM links WHERE chat_id = ?", (chat_id,))
-    links = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return links
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
+    return [row[0] for row in cursor.fetchall()]
 
-# Funktion zum Starten des Bots
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Willkommen! Nutze /link, um das Menü zu öffnen.")
-
-# Funktion zum Anzeigen des Menüs
+# --- Befehl: /link (Menü öffnen) ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    if not is_group_allowed(chat_id):
+        await update.message.reply_text("❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
+        return
+
     keyboard = [
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
         [InlineKeyboardButton("📋 Link anzeigen/löschen", callback_data="show_links")],
@@ -69,7 +77,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📌 Wähle eine Option:", reply_markup=reply_markup)
 
-# Callback-Funktion für Inline-Buttons
+# --- Callback-Funktion für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -91,26 +99,31 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data.startswith("delete_"):
         link_to_delete = query.data.replace("delete_", "")
-        remove_link_from_db(chat_id, link_to_delete)
-        await query.message.edit_text(f"✅ Der Link wurde entfernt: {link_to_delete}")
+        if remove_link_from_db(chat_id, link_to_delete):
+            await query.message.edit_text(f"✅ Der Link wurde entfernt: {link_to_delete}")
+        else:
+            await query.message.edit_text("⚠️ Link nicht gefunden.")
 
     elif query.data == "close_menu":
         await query.message.delete()
 
-# Nachricht prüfen und ggf. löschen
-async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Nachricht prüfen und ggf. löschen ---
+async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
+
+    if not is_group_allowed(chat_id):
+        return  # Gruppe nicht erlaubt, Bot ignoriert Nachrichten
 
     if message.entities:
         for entity in message.entities:
             if entity.type == "url":
                 link = message.text[entity.offset: entity.offset + entity.length]
-                if link not in get_links_from_db(chat_id):
+                if not is_whitelisted(chat_id, link):
                     await message.delete()
-                    await message.reply_text(f"⚠️ Dieser Link ist nicht erlaubt und wurde entfernt: {link}")
+                    await message.reply_text(f"🚫 Dieser Link ist nicht erlaubt und wurde entfernt: {link}")
 
-# Funktion zum Speichern eines Links
+# --- Link speichern, wenn Nutzer ihn sendet ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "awaiting_link" in context.user_data:
         chat_id = context.user_data["awaiting_link"]
@@ -123,15 +136,14 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         del context.user_data["awaiting_link"]
 
-# Hauptfunktion zum Starten des Bots
+# --- Bot starten ---
 def main():
-    init_db()  # Datenbank initialisieren
+    init_db()
     application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("link", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Entity("url"), check_message))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Entity("url"), kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
 
     application.run_polling()
