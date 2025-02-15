@@ -52,7 +52,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔍 Links anzeigen", callback_data="show_links")],
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
         [InlineKeyboardButton("❌ Link löschen", callback_data="delete_link")],
-        [InlineKeyboardButton("❌ Schließen", callback_data="close")]
+        [InlineKeyboardButton("📴 Menü schließen", callback_data="close")]
     ]
     
     if update.message:
@@ -77,7 +77,7 @@ async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Link hinzufügen ---
 async def request_add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = get_chat_id(update)
-    context.user_data["awaiting_link"] = chat_id  # Speichert die Gruppe, für die der Link eingetragen wird
+    context.user_data["awaiting_link"] = chat_id
 
     keyboard = [[InlineKeyboardButton("⬅️ Abbrechen", callback_data="menu")]]
     await update.callback_query.message.edit_text("✏️ Bitte sende den Link, den du hinzufügen möchtest.", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -92,7 +92,7 @@ async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("INSERT OR IGNORE INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
     conn.commit()
     
-    context.user_data.pop("awaiting_link", None)  # Eingabe abschließen
+    context.user_data.pop("awaiting_link", None)
 
     keyboard = [[InlineKeyboardButton("⬅️ Zurück", callback_data="menu")]]
     await update.message.reply_text(f"✅ Link hinzugefügt: {link}", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -154,13 +154,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action.startswith("delete"):
         await delete_link(update, context)
     elif action == "close":
-        await update.callback_query.message.delete()  # Schließt das Menü
+        await update.callback_query.message.delete()
 
-# --- Nachrichtenkontrolle (Fix: Links werden nicht während Eingabe geprüft) ---
+# --- Nachrichtenkontrolle (Fix: Nachricht wird nach dem Löschen wieder gesendet) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = get_chat_id(update)
     if chat_id is None or context.user_data.get("awaiting_link") == chat_id:
-        return  # Wenn ein Link hinzugefügt wird, keine Prüfung durchführen
+        return  
 
     message = update.message
     text = message.text or ""
@@ -171,6 +171,12 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
         if cursor.fetchone() is None:
             await context.bot.delete_message(chat_id, message.message_id)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🚫 Hallo {message.from_user.full_name}, dein Gruppenlink wurde automatisch gelöscht.\n"
+                     "Bitte frage einen Admin, falls du Links posten möchtest.",
+                reply_to_message_id=message.message_id
+            )
 
 # --- Bot starten ---
 def main():
