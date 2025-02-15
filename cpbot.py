@@ -38,7 +38,7 @@ def get_chat_id(update: Update):
         return update.callback_query.message.chat_id
     return None
 
-# --- Menü öffnen ---
+# --- Hauptmenü öffnen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = get_chat_id(update)
     if chat_id is None:
@@ -52,6 +52,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔍 Links anzeigen", callback_data="show_links")],
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
         [InlineKeyboardButton("❌ Link löschen", callback_data="delete_link")],
+        [InlineKeyboardButton("❌ Schließen", callback_data="close")]
     ]
     
     if update.message:
@@ -75,24 +76,26 @@ async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Link hinzufügen ---
 async def request_add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.message.edit_text("✏️ Bitte sende den Link, den du hinzufügen möchtest.")
-    context.user_data["awaiting_link"] = True
+    chat_id = get_chat_id(update)
+    context.user_data["awaiting_link"] = chat_id  # Speichert die Gruppe, für die der Link eingetragen wird
+
+    keyboard = [[InlineKeyboardButton("⬅️ Abbrechen", callback_data="menu")]]
+    await update.callback_query.message.edit_text("✏️ Bitte sende den Link, den du hinzufügen möchtest.", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "awaiting_link" not in context.user_data:
-        return
-    
     chat_id = get_chat_id(update)
-    if chat_id is None:
+    if context.user_data.get("awaiting_link") != chat_id:
         return
 
     link = update.message.text.strip()
 
     cursor.execute("INSERT OR IGNORE INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
     conn.commit()
+    
+    context.user_data.pop("awaiting_link", None)  # Eingabe abschließen
 
-    await update.message.reply_text(f"✅ Link hinzugefügt: {link}")
-    context.user_data.pop("awaiting_link")
+    keyboard = [[InlineKeyboardButton("⬅️ Zurück", callback_data="menu")]]
+    await update.message.reply_text(f"✅ Link hinzugefügt: {link}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # --- Link löschen ---
 async def request_delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,12 +153,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await confirm_delete(update, context)
     elif action.startswith("delete"):
         await delete_link(update, context)
+    elif action == "close":
+        await update.callback_query.message.delete()  # Schließt das Menü
 
-# --- Nachrichtenkontrolle ---
+# --- Nachrichtenkontrolle (Fix: Links werden nicht während Eingabe geprüft) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = get_chat_id(update)
-    if chat_id is None:
-        return  
+    if chat_id is None or context.user_data.get("awaiting_link") == chat_id:
+        return  # Wenn ein Link hinzugefügt wird, keine Prüfung durchführen
 
     message = update.message
     text = message.text or ""
@@ -164,29 +169,16 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         link = match.group(0)
 
         cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-        link_in_whitelist = cursor.fetchone()
-
-        if link_in_whitelist is None:
+        if cursor.fetchone() is None:
             await context.bot.delete_message(chat_id, message.message_id)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🚫 Link von {message.from_user.full_name} wurde gelöscht.",
-                reply_to_message_id=message.message_id
-            )
 
-# --- Hauptfunktion zum Starten des Bots ---
+# --- Bot starten ---
 def main():
-    global conn, cursor
-    conn, cursor = init_db()
-
     application = Application.builder().token(TOKEN).build()
-
     application.add_handler(CommandHandler("link", show_menu))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht), group=-1)
-
-    print("🤖 Bot gestartet und arbeitet jetzt vollständig!")
     application.run_polling()
 
 if __name__ == "__main__":
