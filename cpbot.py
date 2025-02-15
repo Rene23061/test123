@@ -3,8 +3,8 @@ import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
-# --- Telegram-Bot-Token ---
-TOKEN = "DEIN_BOT_TOKEN"
+# --- Telegram-Bot-Token (aus deinem ursprünglichen Code übernommen) ---
+TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 
 # --- Regulärer Ausdruck für Telegram-Gruppenlinks ---
 TELEGRAM_LINK_PATTERN = re.compile(r"(https?://)?(t\.me|telegram\.me)/(joinchat|[+a-zA-Z0-9_/]+)")
@@ -35,11 +35,6 @@ conn, cursor = init_db()
 # --- Prüfen, ob die Gruppe für den Anti-Gruppenlink-Bot erlaubt ist ---
 def is_group_allowed(chat_id):
     cursor.execute("SELECT allow_AntiGruppenlinkBot FROM allowed_groups WHERE chat_id = ? AND allow_AntiGruppenlinkBot = 1", (chat_id,))
-    return cursor.fetchone() is not None
-
-# --- Überprüfung, ob ein Link in der Whitelist der Gruppe ist ---
-def is_whitelisted(chat_id, link):
-    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
     return cursor.fetchone() is not None
 
 # --- Prüfen, ob ein Benutzer Admin oder Mitglied ist ---
@@ -119,7 +114,8 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         link = match.group(0)
 
         # Wenn der Link nicht in der Whitelist der aktuellen Gruppe steht, Nachricht löschen
-        if not is_whitelisted(chat_id, link):
+        cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+        if cursor.fetchone() is None:
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=f"🚫 Hallo {user_display_name}, dein Link wurde automatisch gelöscht. "
@@ -127,7 +123,6 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
                 reply_to_message_id=message.message_id
             )
             await context.bot.delete_message(chat_id, message.message_id)
-            return
 
 # --- Hauptfunktion zum Starten des Bots ---
 def main():
