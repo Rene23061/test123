@@ -10,7 +10,7 @@ TOKEN = "8012589725:AAEO5PdbLQiW6nwIRHmB6AayXMO7f31ukvc"
 # --- Logging aktivieren ---
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG  # Ändere auf INFO, wenn weniger Logs gewünscht sind
+    level=logging.DEBUG
 )
 
 # --- Regulärer Ausdruck für Telegram-Links ---
@@ -75,16 +75,21 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 # --- Befehl: /link (Öffnet das Menü zur Linkverwaltung) ---
 async def link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
+    logging.info(f"📌 /link aufgerufen in Chat {chat_id}")
+
     keyboard = [
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data=f"add_link_{chat_id}")],
         [InlineKeyboardButton("📋 Link anzeigen/löschen", callback_data=f"show_links_{chat_id}")]
     ]
+
     await update.message.reply_text("🔗 **Link-Verwaltung:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    logging.debug("✅ Menü erfolgreich gesendet.")
 
 # --- Link hinzufügen: Fragt den Benutzer nach einem Link ---
 async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.data.split("_")[-1]
+    logging.info(f"📌 Link-Hinzufügen gestartet in Chat {chat_id}")
 
     await query.message.edit_text("✏️ Bitte sende mir den **Link**, den du zur Whitelist hinzufügen möchtest.")
     context.user_data["waiting_for_link"] = chat_id
@@ -104,6 +109,7 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
         conn.commit()
         await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
+        logging.info(f"✅ Link erfolgreich gespeichert: {link}")
     except sqlite3.IntegrityError:
         await update.message.reply_text("⚠️ Dieser Link ist bereits in der Whitelist.")
 
