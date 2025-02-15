@@ -16,8 +16,8 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS allowed_groups (
             chat_id INTEGER PRIMARY KEY,
-            allow_sbot INTEGER DEFAULT 0,
-            allow_cpbot INTEGER DEFAULT 0
+            allow_SystemCleanerBot INTEGER DEFAULT 0,
+            allow_AntiGruppenlinkBot INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -25,9 +25,9 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüfen, ob die Gruppe für `cpbot` erlaubt ist ---
+# --- Prüfen, ob die Gruppe für den Anti-Gruppenlink-Bot erlaubt ist ---
 def is_group_allowed(chat_id):
-    cursor.execute("SELECT allow_cpbot FROM allowed_groups WHERE chat_id = ? AND allow_cpbot = 1", (chat_id,))
+    cursor.execute("SELECT allow_AntiGruppenlinkBot FROM allowed_groups WHERE chat_id = ? AND allow_AntiGruppenlinkBot = 1", (chat_id,))
     return cursor.fetchone() is not None
 
 # --- Befehl: /id (Aktuelle Gruppen-ID anzeigen) ---
@@ -108,7 +108,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     message = update.message
     chat_id = message.chat_id
 
-    # Prüfen, ob die Gruppe für `cpbot` erlaubt ist
+    # Prüfen, ob die Gruppe für den Anti-Gruppenlink-Bot erlaubt ist
     if not is_group_allowed(chat_id):
         print(f"⛔ Gruppe {chat_id} ist nicht erlaubt. Nachricht wird ignoriert.")
         return  # Bot ignoriert die Nachricht
@@ -151,7 +151,7 @@ def main():
     # Nachrichten-Handler hinzufügen
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
-    print("🤖 CP-Bot gestartet und überwacht Telegram-Gruppenlinks...")
+    print("🤖 Anti-Gruppenlink-Bot gestartet und überwacht Telegram-Gruppenlinks...")
     application.run_polling()
 
 if __name__ == "__main__":
