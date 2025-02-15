@@ -1,6 +1,6 @@
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, filters
 
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
@@ -67,7 +67,7 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.edit_text("🗑️ Wähle eine Gruppe zum Entfernen:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- Sicherheitsabfrage als Popup ---
+# --- Sicherheitsabfrage als Popup (Bestätigung vor dem Löschen) ---
 async def confirm_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.data.replace("confirm_remove_", "")
