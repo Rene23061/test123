@@ -47,7 +47,7 @@ async def is_admin_or_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # --- Hauptmenü ---
 async def show_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
+    chat_id = update.effective_chat.id  # FIXED!
 
     if not is_group_allowed(chat_id):
         await context.bot.send_message(chat_id, "❌ Diese Gruppe ist nicht erlaubt, der Bot reagiert hier nicht.")
@@ -69,7 +69,7 @@ async def show_link_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Callback für Menü-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = update.effective_chat.id
+    chat_id = update.effective_chat.id  # FIXED!
     await query.answer()
 
     if query.data == "show_links":
