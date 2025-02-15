@@ -24,10 +24,6 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Prüfen, ob die Gruppe für den Bot erlaubt ist ---
-def is_group_allowed(chat_id):
-    return True  # Falls eine Berechtigungsprüfung gewünscht ist, hier anpassen
-
 # --- /link Befehl: Inline-Menü zum Hinzufügen eines Links ---
 async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("📎 Link hinzufügen", callback_data="add_link")]]
@@ -67,6 +63,7 @@ async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if links:
         keyboard = [[InlineKeyboardButton(link[0], url=link[0])] for link in links]
+        keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close")])  # Schließen-Button hinzufügen
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("📋 **Whitelist dieser Gruppe:**", reply_markup=reply_markup)
     else:
@@ -80,6 +77,7 @@ async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if links:
         keyboard = [[InlineKeyboardButton(link[0], callback_data=f"delete_{link[0]}")] for link in links]
+        keyboard.append([InlineKeyboardButton("❌ Schließen", callback_data="close")])  # Schließen-Button hinzufügen
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Wähle einen Link zum Löschen:", reply_markup=reply_markup)
     else:
