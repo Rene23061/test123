@@ -31,49 +31,30 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- Überprüfung, ob ein Link in der Whitelist ist ---
-def is_whitelisted(chat_id, link):
-    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
-    return cursor.fetchone() is not None
-
 # --- Link zur Whitelist hinzufügen ---
-def add_link_to_db(chat_id, link):
-    logging.debug(f"🔍 Versuche, den Link {link} für Chat {chat_id} zur Whitelist hinzuzufügen...")
-    try:
-        cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
-        conn.commit()
-        logging.info(f"✅ Link erfolgreich hinzugefügt: {link}")
-        return True
-    except sqlite3.IntegrityError:
-        logging.warning(f"⚠️ Link bereits in der Whitelist: {link}")
-        return False  # Link existiert bereits
-
-# --- Link speichern, wenn Nutzer ihn sendet ---
-async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     link = update.message.text.strip()
 
-    logging.debug(f"📥 Erhaltener Link: {link} für Chat {chat_id}")
-
     if not TELEGRAM_LINK_PATTERN.match(link):
-        await update.message.reply_text("❌ Dies ist kein gültiger Telegram-Link.")
-        logging.warning(f"❌ Ungültiger Link erkannt: {link}")
+        await update.message.reply_text("❌ Kein gültiger Telegram-Link.")
         return
 
-    if add_link_to_db(chat_id, link):
+    logging.debug(f"📥 Speichere Link: {link} für Chat {chat_id}")
+
+    try:
+        cursor.execute("INSERT INTO whitelist (chat_id, link) VALUES (?, ?)", (chat_id, link))
+        conn.commit()
         await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
-    else:
+    except sqlite3.IntegrityError:
         await update.message.reply_text(f"⚠️ **{link}** ist bereits in der Whitelist.")
 
-    # **Nach erfolgreicher Speicherung die Löschung unterdrücken**
+    # Flag setzen, damit der Link nicht gelöscht wird
     context.user_data["awaiting_link"] = None
-    logging.debug("🟢 Link erfolgreich gespeichert, Filter deaktiviert.")
 
 # --- Liste aller Links anzeigen ---
 async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
-
-    logging.debug(f"📋 Rufe Whitelist für Chat {chat_id} ab...")
 
     cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
     links = cursor.fetchall()
@@ -81,11 +62,26 @@ async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if links:
         response = "📋 **Whitelist dieser Gruppe:**\n" + "\n".join(f"- {link[0]}" for link in links)
     else:
-        response = "❌ Die Whitelist dieser Gruppe ist leer."
-
-    logging.debug(f"🔍 Abgerufene Links: {links}")
+        response = "❌ Die Whitelist ist leer."
 
     await update.message.reply_text(response, parse_mode="Markdown")
+
+# --- Link aus Whitelist löschen ---
+async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    link = context.args[0].strip() if context.args else None
+
+    if not link:
+        await update.message.reply_text("❌ Bitte gib einen Link an, den du löschen möchtest.")
+        return
+
+    cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+    conn.commit()
+
+    if cursor.rowcount > 0:
+        await update.message.reply_text(f"✅ **{link}** wurde aus der Whitelist entfernt.")
+    else:
+        await update.message.reply_text(f"⚠️ **{link}** war nicht in der Whitelist.")
 
 # --- Nachrichten prüfen und ggf. löschen ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -93,19 +89,17 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
     chat_id = message.chat_id
     text = message.text
 
-    # **Prüfen, ob wir gerade einen Link eintragen**
+    # Wenn ein Link gerade gespeichert wird, ignorieren
     if context.user_data.get("awaiting_link") == chat_id:
-        logging.debug(f"⚠️ Nachricht wird ignoriert, da Link zur Whitelist hinzugefügt wird: {text}")
+        logging.debug(f"⚠️ Nachricht wird ignoriert, da ein Link gespeichert wird: {text}")
         return
-
-    logging.debug(f"📩 Nachricht erhalten: {text}")
 
     for match in TELEGRAM_LINK_PATTERN.finditer(text):
         link = match.group(0)
-        logging.debug(f"🔗 Erkannter Telegram-Link: {link}")
+        cursor.execute("SELECT link FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
 
-        if not is_whitelisted(chat_id, link):
-            logging.info(f"❌ Link nicht erlaubt, wird gelöscht: {link}")
+        if cursor.fetchone() is None:
+            logging.info(f"❌ Unerlaubter Link, wird gelöscht: {link}")
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=f"🚫 Dieser Link ist nicht erlaubt und wurde entfernt: {link}"
@@ -120,29 +114,32 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("➕ Link hinzufügen", callback_data="add_link")],
-        [InlineKeyboardButton("📋 Link anzeigen/löschen", callback_data="show_links")],
+        [InlineKeyboardButton("📋 Link anzeigen", callback_data="show_links")],
+        [InlineKeyboardButton("🗑 Link löschen", callback_data="delete_link")],
         [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     if query:
         await query.message.edit_text("📌 Wähle eine Option:", reply_markup=reply_markup)
     else:
         await update.message.reply_text("📌 Wähle eine Option:", reply_markup=reply_markup)
 
-# --- Callback-Funktion für Inline-Buttons ---
+# --- Callback-Funktion für Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
 
     if query.data == "add_link":
-        await query.message.edit_text("Sende mir bitte den Link, den du zur Whitelist hinzufügen möchtest.")
-        context.user_data["awaiting_link"] = chat_id
-        logging.debug(f"🟡 Warte auf einen Link für Chat {chat_id}...")
+        await query.message.edit_text("Sende mir bitte den Link, den du hinzufügen möchtest.")
+        context.user_data["awaiting_link"] = chat_id  # Speichert den Zustand
 
     elif query.data == "show_links":
         await list_links(update, context)
+
+    elif query.data == "delete_link":
+        await query.message.edit_text("Nutze den Befehl: `/del <URL>` um einen Link zu löschen.", parse_mode="Markdown")
 
     elif query.data == "close_menu":
         await query.message.delete()
@@ -151,13 +148,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("link", show_menu))
+    application.add_handler(CommandHandler("start", show_menu))
     application.add_handler(CommandHandler("list", list_links))
+    application.add_handler(CommandHandler("del", delete_link))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Entity("url"), kontrolliere_nachricht))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
 
-    logging.info("🚀 Bot gestartet! Warte auf Nachrichten...")
+    # Nur Links prüfen, nicht gesamte Nachrichten
+    application.add_handler(MessageHandler(filters.Entity("url"), kontrolliere_nachricht))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_link))
+
+    logging.info("🚀 Bot gestartet!")
     application.run_polling()
 
 if __name__ == "__main__":
