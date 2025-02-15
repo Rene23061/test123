@@ -52,18 +52,51 @@ async def close_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.delete()
     await query.answer()
 
+# --- Link-Liste abrufen (Fix für Fehler) ---
+async def show_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    chat_id = int(query.data.split("_")[-1])
+    logging.info(f"📋 Link-Liste wird für Chat {chat_id} abgerufen...")
+
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
+    links = cursor.fetchall()
+
+    if not links:
+        await query.message.edit_text("❌ Die Whitelist ist leer.")
+        return
+
+    keyboard = [[InlineKeyboardButton(link[0], callback_data=f"delete_link_{link[0]}")] for link in links]
+    keyboard.append([InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")])
+
+    await query.message.edit_text("📋 **Whitelist:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    logging.debug("✅ Link-Liste erfolgreich gesendet.")
+
+# --- Link löschen (Fix für Fehler) ---
+async def delete_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    link = query.data.replace("delete_link_", "")
+    chat_id = query.message.chat_id
+
+    logging.info(f"🗑️ Löschvorgang gestartet für {link} in Chat {chat_id}")
+
+    cursor.execute("DELETE FROM whitelist WHERE chat_id = ? AND link = ?", (chat_id, link))
+    conn.commit()
+
+    await query.message.edit_text(f"✅ **{link}** wurde erfolgreich gelöscht.")
+    logging.debug("✅ Link erfolgreich aus der Whitelist entfernt.")
+
 # --- Link hinzufügen: Benutzer sendet einen Link ---
 async def add_link_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = int(query.data.split("_")[-1])
     logging.info(f"📌 Link-Hinzufügen gestartet in Chat {chat_id}")
 
-    context.user_data["waiting_for_link"] = chat_id  # WICHTIG: Hier wird der Status gespeichert!
+    context.user_data["waiting_for_link"] = chat_id  # Status speichern
     logging.debug(f"📝 `waiting_for_link` gesetzt auf {chat_id}")
 
     await query.message.edit_text("✏️ Bitte sende mir den **Link**, den du zur Whitelist hinzufügen möchtest.")
 
-# --- Link speichern (Fix für Datenbank) ---
+# --- Link speichern ---
 async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.user_data.get("waiting_for_link")
 
@@ -85,12 +118,12 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.info(f"✅ Link erfolgreich gespeichert: {link}")
 
         await update.message.reply_text(f"✅ **{link}** wurde zur Whitelist hinzugefügt.")
-        context.user_data.pop("waiting_for_link", None)  # Lösche den Status nach erfolgreicher Speicherung
+        context.user_data.pop("waiting_for_link", None)  # Status löschen
 
     except sqlite3.IntegrityError:
         await update.message.reply_text("⚠️ Dieser Link ist bereits in der Whitelist.")
 
-# --- Nachrichtenkontrolle & Link-Löschung ---
+# --- Nachrichtenkontrolle & Link-Löschung (Fix für Menü-Fehler) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -135,6 +168,8 @@ def main():
 
     application.add_handler(CommandHandler("link", link_menu))
     application.add_handler(CallbackQueryHandler(add_link_prompt, pattern="add_link_"))
+    application.add_handler(CallbackQueryHandler(show_links, pattern="show_links_"))
+    application.add_handler(CallbackQueryHandler(delete_link, pattern="delete_link_"))
     application.add_handler(CallbackQueryHandler(close_menu, pattern="close_menu"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(TELEGRAM_LINK_PATTERN), kontrolliere_nachricht))
