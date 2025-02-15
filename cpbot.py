@@ -69,16 +69,34 @@ async def save_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_link"] = None
     logging.debug("🟢 Link erfolgreich gespeichert, Filter deaktiviert.")
 
-# --- Nachrichten prüfen und ggf. löschen (ABER NICHT WENN EIN LINK EINGETRAGEN WIRD) ---
+# --- Liste aller Links anzeigen ---
+async def list_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+
+    logging.debug(f"📋 Rufe Whitelist für Chat {chat_id} ab...")
+
+    cursor.execute("SELECT link FROM whitelist WHERE chat_id = ?", (chat_id,))
+    links = cursor.fetchall()
+
+    if links:
+        response = "📋 **Whitelist dieser Gruppe:**\n" + "\n".join(f"- {link[0]}" for link in links)
+    else:
+        response = "❌ Die Whitelist dieser Gruppe ist leer."
+
+    logging.debug(f"🔍 Abgerufene Links: {links}")
+
+    await update.message.reply_text(response, parse_mode="Markdown")
+
+# --- Nachrichten prüfen und ggf. löschen ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
     text = message.text
 
-    # **WICHTIG:** Prüfen, ob wir gerade auf einen Link warten!
+    # **Prüfen, ob wir gerade einen Link eintragen**
     if context.user_data.get("awaiting_link") == chat_id:
         logging.debug(f"⚠️ Nachricht wird ignoriert, da Link zur Whitelist hinzugefügt wird: {text}")
-        return  # Nicht löschen, weil wir gerade einen Link speichern wollen!
+        return
 
     logging.debug(f"📩 Nachricht erhalten: {text}")
 
@@ -120,8 +138,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "add_link":
         await query.message.edit_text("Sende mir bitte den Link, den du zur Whitelist hinzufügen möchtest.")
-        context.user_data["awaiting_link"] = chat_id  # Warte auf Link von diesem Chat
+        context.user_data["awaiting_link"] = chat_id
         logging.debug(f"🟡 Warte auf einen Link für Chat {chat_id}...")
+
+    elif query.data == "show_links":
+        await list_links(update, context)
 
     elif query.data == "close_menu":
         await query.message.delete()
@@ -131,6 +152,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("link", show_menu))
+    application.add_handler(CommandHandler("list", list_links))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & filters.Entity("url"), kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_link))
