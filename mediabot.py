@@ -128,6 +128,26 @@ def get_back_menu():
     return InlineKeyboardMarkup(keyboard)
 
 # --- Nachrichtenkontrolle (Nur Medien erlauben) ---
+async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+    user = message.from_user
+    text = message.text.strip()
+
+    if "action" in context.user_data:
+        action = context.user_data.pop("action")
+
+        if action == "add_topic":
+            if text.isdigit():
+                topic_id = int(text)
+                cursor.execute("INSERT OR IGNORE INTO allowed_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
+                conn.commit()
+                await update.message.reply_text(f"✅ Thema {topic_id} wurde gespeichert.")
+            else:
+                await update.message.reply_text("❌ Ungültige Themen-ID. Bitte nur Zahlen eingeben.")
+            return await show_menu(update, context)
+
+# --- Nachrichtenfilter für Medien-Only-Funktion ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -138,7 +158,6 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
-            # Prüfen, ob Nachricht nur Text enthält oder nur einen Link
             ist_reiner_text = bool(message.text and not message.photo and not message.video)
             enthaelt_link = bool(URL_PATTERN.search(message.text or ""))
 
@@ -157,6 +176,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
 
     # Nachrichten-Handler
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
     print("🤖 Medien-Only Bot gestartet...")
