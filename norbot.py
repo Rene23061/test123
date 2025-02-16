@@ -1,16 +1,6 @@
 import sqlite3
-import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
-)
-
-# --- Logging für Debugging ---
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "7847601238:AAF9MNu25OVGwkHUDCopgIqZ-LzWhxB4__Y"
@@ -54,7 +44,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
-    context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
+    context.user_data["menu_message_id"] = msg.message_id  
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,7 +90,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_menu(update, context)
 
     elif query.data == "close_menu":
-        # Löscht das Menü + vorherige Nachricht
         if "menu_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
@@ -120,23 +109,11 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "add_topic":
             try:
                 topic_id = int(text)
-                
-                # Debugging: Zeige die Daten, die gespeichert werden sollen
-                logger.info(f"🔄 Speichere Thema {topic_id} für Chat {chat_id}...")
-
                 cursor.execute("INSERT INTO restricted_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
                 conn.commit()
-                
-                logger.info(f"✅ Thema {topic_id} erfolgreich gespeichert!")
                 await update.message.reply_text(f"✅ Thema {topic_id} gesperrt.")
-
             except ValueError:
-                logger.error(f"❌ Ungültige Eingabe: {text} ist keine Zahl!")
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
-            except sqlite3.Error as e:
-                logger.error(f"❌ Fehler beim Speichern in der Datenbank: {e}")
-                await update.message.reply_text("❌ Fehler beim Speichern in der Datenbank. Bitte versuche es erneut.")
-
             return await show_menu(update, context)
 
     # Nachrichtenprüfung (löscht, wenn nicht Admin/Inhaber)
@@ -146,7 +123,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
         await update.message.delete()
 
-# --- Medienprüfung (löscht Medien) ---
+# --- Medienbehandlung (Bilder, Videos, Sticker, Dokumente blockieren) ---
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -164,9 +141,13 @@ def main():
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.DOCUMENT | filters.STICKER, handle_media))
 
-    logger.info("🤖 NoReadBot läuft...")
+    # 🔧 Korrekte Filter für Medien: Dokumente wurden durch `filters.ATTACHMENT` ersetzt
+    application.add_handler(MessageHandler(
+        filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.ATTACHMENT | filters.STICKER, handle_media
+    ))
+
+    print("🤖 NoReadBot läuft...")
     application.run_polling()
 
 if __name__ == "__main__":
