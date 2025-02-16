@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 TOKEN = "8069716549:AAGfRNlsOIOlsMBZrAcsiB_IjV5yz3XOM8A"
 
 # --- Datenbankverbindung für Gruppen-Whitelist ---
-WHITELIST_DB_PATH = "cpkiller/whitelist.db"
+WHITELIST_DB_PATH = "/cpkiller/whitelist.db"
 
 conn_whitelist = sqlite3.connect(WHITELIST_DB_PATH, check_same_thread=False)
 cursor_whitelist = conn_whitelist.cursor()
