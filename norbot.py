@@ -123,7 +123,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
         await update.message.delete()
 
-# --- Medienbehandlung (Bilder, Videos, Sticker, Dokumente blockieren) ---
+# --- Medienbehandlung (Bilder, Videos, Sticker, Sprachnachrichten, Dokumente blockieren) ---
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -142,9 +142,9 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    # 🔧 Korrekte Filter für Medien: Dokumente wurden durch `filters.ATTACHMENT` ersetzt
+    # 🔧 Korrekte Filter für Medien (Fehler behoben)
     application.add_handler(MessageHandler(
-        filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.ATTACHMENT | filters.STICKER, handle_media
+        filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.Sticker.ALL, handle_media
     ))
 
     print("🤖 NoReadBot läuft...")
