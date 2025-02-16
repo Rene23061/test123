@@ -1,13 +1,14 @@
+import re
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Telegram-Bot-Token ---
+# --- Telegram-Bot-Token (Media-Only-Bot) ---
 TOKEN = "8069716549:AAGfRNlsOIOlsMBZrAcsiB_IjV5yz3XOM8A"
 
 # --- Datenbankverbindung ---
 def init_db():
-    conn = sqlite3.connect("mediaonlybot.db", check_same_thread=False)
+    conn = sqlite3.connect("mediabot.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS media_only_topics (
@@ -29,9 +30,9 @@ async def is_admin(update: Update, user_id: int) -> bool:
 # --- Menü erstellen ---
 def get_menu():
     keyboard = [
-        [InlineKeyboardButton("➕ Thema auf Medien beschränken", callback_data="add_topic")],
-        [InlineKeyboardButton("❌ Medien-Beschränkung aufheben", callback_data="del_topic")],
-        [InlineKeyboardButton("📋 Medien-Themen anzeigen", callback_data="list_topics")],
+        [InlineKeyboardButton("➕ Thema sperren", callback_data="add_topic")],
+        [InlineKeyboardButton("❌ Thema entsperren", callback_data="del_topic")],
+        [InlineKeyboardButton("📋 Gesperrte Themen anzeigen", callback_data="list_topics")],
         [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -42,8 +43,8 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, user_id):
         await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
         return
-    
-    msg = await update.message.reply_text("🎞 Themen mit Medien-Beschränkung verwalten:", reply_markup=get_menu())
+
+    msg = await update.message.reply_text("🎥 Medien-Only Themen-Verwaltung:", reply_markup=get_menu())
     context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
 
 # --- Callback für Inline-Buttons ---
@@ -60,30 +61,30 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "add_topic":
         context.user_data["action"] = "add_topic"
-        await query.message.edit_text("📩 Sende die ID des Themas, das nur Medien enthalten soll:", reply_markup=get_menu())
+        await query.message.edit_text("📩 Sende die ID des Themas, das du sperren möchtest:", reply_markup=get_menu())
 
     elif query.data == "del_topic":
         cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
 
         if not topics:
-            await query.message.edit_text("❌ Keine Themen mit Medien-Beschränkung.", reply_markup=get_menu())
+            await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu())
             return
 
         keyboard = [[InlineKeyboardButton(f"Thema {topic[0]}", callback_data=f"confirm_del_{topic[0]}")] for topic in topics]
         keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")])
-        await query.message.edit_text("🔓 Wähle ein Thema zum Freigeben:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.message.edit_text("🔓 Wähle ein Thema zum Entsperren:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif query.data.startswith("confirm_del_"):
         topic_id = int(query.data.replace("confirm_del_", ""))
         cursor.execute("DELETE FROM media_only_topics WHERE chat_id = ? AND topic_id = ?", (chat_id, topic_id))
         conn.commit()
-        await query.message.edit_text(f"✅ Thema {topic_id} ist jetzt ohne Medien-Beschränkung.", reply_markup=get_menu())
+        await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu())
 
     elif query.data == "list_topics":
         cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
-        text = "📋 **Medien-Beschränkte Themen:**\n" + "\n".join(f"- Thema {topic[0]}" for topic in topics) if topics else "❌ Keine Themen mit Medien-Beschränkung."
+        text = "📋 **Gesperrte Themen:**\n" + "\n".join(f"- Thema {topic[0]}" for topic in topics) if topics else "❌ Keine gesperrten Themen."
         await query.message.edit_text(text, reply_markup=get_menu())
 
     elif query.data == "back_to_menu":
@@ -112,32 +113,30 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 topic_id = int(text)
                 cursor.execute("INSERT INTO media_only_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
                 conn.commit()
-                await update.message.reply_text(f"✅ Thema {topic_id} ist jetzt nur für Medien erlaubt.")
+                await update.message.reply_text(f"✅ Thema {topic_id} gesperrt.")
             except ValueError:
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenprüfung (Nur Medien erlaubt) ---
-async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    chat_id = message.chat_id
-    user_id = message.from_user.id
-    topic_id = message.message_thread_id if message.is_topic_message else None
+    # Nachrichtenprüfung (löscht, wenn nicht Admin/Inhaber)
+    cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
+    restricted_topics = {row[0] for row in cursor.fetchall()}
 
-    if topic_id:
-        cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
-        allowed_topics = {row[0] for row in cursor.fetchall()}
+    if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
+        await update.message.delete()
 
-        if topic_id in allowed_topics:
-            hat_medien = message.photo or message.video or message.document or message.audio or message.animation
-            ist_admin = await is_admin(update, user_id)
+# --- Medien-Filter (Texte blockieren) ---
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
+    topic_id = update.message.message_thread_id
 
-            if not hat_medien and not ist_admin:
-                try:
-                    await message.delete()
-                    print(f"❌ Nachricht gelöscht (kein Medium) in Thema {topic_id}")
-                except Exception as e:
-                    print(f"⚠ Fehler beim Löschen der Nachricht: {e}")
+    cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
+    restricted_topics = {row[0] for row in cursor.fetchall()}
+
+    if topic_id in restricted_topics and not await is_admin(update, user_id):
+        if not (update.message.photo or update.message.video or update.message.audio or update.message.voice or update.message.document or update.message.animation):
+            await update.message.delete()
 
 # --- Bot starten ---
 def main():
@@ -146,9 +145,9 @@ def main():
     application.add_handler(CommandHandler("mediaonly", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-    application.add_handler(MessageHandler(filters.ALL, kontrolliere_nachricht))  # Alle Nachrichten überwachen
+    application.add_handler(MessageHandler(filters.ALL, handle_media))
 
-    print("🤖 Media-Only-Bot läuft...")
+    print("📸 Media-Only-Bot läuft...")
     application.run_polling()
 
 if __name__ == "__main__":
