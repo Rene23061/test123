@@ -122,7 +122,8 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await show_menu(update, context)
 
 # --- Nachrichtenprüfung (löscht Texte & Medien) ---
-async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Löscht alle Nachrichten (Texte, Medien) von Nicht-Admins in gesperrten Themen."""
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
     topic_id = update.message.message_thread_id
@@ -131,7 +132,10 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
     if topic_id in restricted_topics and not await is_admin(update, user_id):
-        await update.message.delete()
+        try:
+            await update.message.delete()
+        except Exception as e:
+            print(f"Fehler beim Löschen der Nachricht: {e}")
 
 # --- Bot starten ---
 def main():
@@ -141,10 +145,9 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    # ✅ Fehlerhafte Filter wurden ersetzt ✅
+    # ✅ ALLE Nachrichtentypen werden gelöscht, wenn nicht von Admin/Inhaber
     application.add_handler(MessageHandler(
-        filters.TEXT | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | 
-        filters.Document.ALL | filters.Animation.ALL, handle_media
+        filters.ALL & ~filters.COMMAND, handle_messages
     ))
 
     print("🤖 NoReadBot läuft...")
