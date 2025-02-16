@@ -37,15 +37,23 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen ---
+# --- Menü anzeigen (Fix für Nachrichten & Callback-Queries) ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     if not await is_admin(update, user_id):
-        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        if update.message:
+            await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        elif update.callback_query:
+            await update.callback_query.answer("🚫 Du musst Admin sein, um dieses Menü zu öffnen!", show_alert=True)
         return
 
-    msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
-    context.user_data["menu_message_id"] = msg.message_id  
+    if update.message:
+        msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
+    elif update.callback_query:
+        msg = await update.callback_query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
+
+    context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,36 +125,23 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenprüfung (Blockiert ALLES außer Admins) ---
-async def handle_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    chat_id = message.chat_id
-    topic_id = message.message_thread_id
-    user_id = message.from_user.id
-
-    # Admin-Check
-    if await is_admin(update, user_id):
-        return  
-
-    # Prüfen, ob das Thema gesperrt ist
+    # Nachrichtenprüfung (Blockiert ALLES außer Admins)
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
-    if topic_id in restricted_topics:
-        print(f"🚫 Nachricht von {user_id} wird gelöscht: {message.text or 'MEDIUM'}")
-        await message.delete()
+    if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
+        try:
+            await update.message.delete()
+        except:
+            pass
 
 # --- Bot starten ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
-    # Befehle & Menü
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-
-    # ALLES LÖSCHEN außer Admins
-    application.add_handler(MessageHandler(filters.ALL, handle_user_messages))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_user_input))
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
