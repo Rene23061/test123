@@ -1,9 +1,6 @@
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, MessageHandler,
-    ContextTypes, filters
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "7847601238:AAF9MNu25OVGwkHUDCopgIqZ-LzWhxB4__Y"
@@ -48,7 +45,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
     context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
-    context.user_data.pop("action", None)  # Setzt Aktionen zurück
+    context.user_data.pop("action", None)  # Setzt laufende Aktionen zurück
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,7 +97,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
         await query.message.delete()
-        context.user_data.pop("action", None)  # Setzt Aktionen zurück
+        context.user_data.pop("action", None)  # Setzt laufende Aktionen zurück
 
 # --- Nutzer-Eingabe für Themen-ID ---
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,21 +118,23 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenprüfung (löscht Texte & Medien) ---
-async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Löscht alle Nachrichten (Texte, Medien) von Nicht-Admins in gesperrten Themen."""
+# --- Nachrichtenfilterung (Löscht alles außer von Admins) ---
+async def delete_unauthorized_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
-    topic_id = update.message.message_thread_id
+    message = update.message
+    topic_id = message.message_thread_id
 
+    # Admin-Check
+    if await is_admin(update, user_id):
+        return
+
+    # Prüfen, ob das Thema gesperrt ist
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
-    if topic_id in restricted_topics and not await is_admin(update, user_id):
-        try:
-            await update.message.delete()
-        except Exception as e:
-            print(f"Fehler beim Löschen der Nachricht: {e}")
+    if topic_id in restricted_topics:
+        await message.delete()
 
 # --- Bot starten ---
 def main():
@@ -144,11 +143,9 @@ def main():
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-
-    # ✅ ALLE Nachrichtentypen werden gelöscht, wenn nicht von Admin/Inhaber
-    application.add_handler(MessageHandler(
-        filters.ALL & ~filters.COMMAND, handle_messages
-    ))
+    
+    # Nachrichten-Handler zum Löschen unerlaubter Nachrichten
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, delete_unauthorized_messages))
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
