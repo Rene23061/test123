@@ -37,6 +37,16 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# --- Bot löscht alle seine Nachrichten ---
+async def delete_bot_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    async for message in context.bot.get_chat_history(chat_id):
+        if message.from_user.id == context.bot.id:
+            try:
+                await message.delete()
+            except:
+                pass
+
 # --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -95,15 +105,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(text, reply_markup=get_menu())
 
     elif query.data == "back_to_menu":
+        context.user_data.pop("action", None)  # Setzt den Eingabe-Modus zurück
         await show_menu(update, context)
 
     elif query.data == "close_menu":
+        context.user_data.pop("action", None)  # Setzt den Eingabe-Modus zurück
         if "menu_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
             except:
                 pass
         await query.message.delete()
+        await delete_bot_messages(update, context)  # Löscht alle Bot-Nachrichten
 
 # --- Nutzer-Eingabe für Themen-ID ---
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
