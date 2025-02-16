@@ -60,7 +60,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "add_topic":
         context.user_data["action"] = "add_topic"
-        await query.message.edit_text("📩 Sende die ID des Themas, das du sperren möchtest:", reply_markup=get_menu())
+        await query.message.edit_text(
+            "📩 Sende die ID des Themas, das du sperren möchtest:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")]])
+        )
 
     elif query.data == "del_topic":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
@@ -87,9 +90,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(text, reply_markup=get_menu())
 
     elif query.data == "back_to_menu":
+        context.user_data.pop("action", None)  # ❗ Eingabe-Modus abbrechen!
         await query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
 
     elif query.data == "close_menu":
+        context.user_data.pop("action", None)  # ❗ Eingabe-Modus abbrechen!
         if "menu_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
@@ -104,7 +109,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if "action" in context.user_data:
-        action = context.user_data.pop("action")
+        action = context.user_data.pop("action")  # ❗ Nach Eingabe entfernen!
 
         if action == "add_topic":
             try:
@@ -142,7 +147,6 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    # 🔧 Korrekte Filter für Medien (Fehler behoben)
     application.add_handler(MessageHandler(
         filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.Sticker.ALL, handle_media
     ))
