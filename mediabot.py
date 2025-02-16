@@ -135,9 +135,9 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
-            # Prüfen, ob die Nachricht **KEIN** Medium enthält
+            # Prüfen, ob die Nachricht KEIN Medium enthält
             hat_text = bool(message.text)
-            hat_keine_medien = not message.photo and not message.video and not message.animation and not message.document and not message.audio
+            hat_keine_medien = not (message.photo or message.video or message.animation or message.document or message.audio)
 
             if hat_text and hat_keine_medien:
                 try:
