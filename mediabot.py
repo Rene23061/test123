@@ -1,5 +1,5 @@
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
@@ -8,12 +8,12 @@ from telegram.ext import (
 # --- Telegram-Bot-Token ---
 TOKEN = "8069716549:AAGfRNlsOIOlsMBZrAcsiB_IjV5yz3XOM8A"
 
-# --- Verbindung zur SQLite-Datenbank herstellen ---
+# --- Verbindung zur SQLite-Datenbank ---
 def init_db():
-    conn = sqlite3.connect("/root/medienbot/medienbot.db", check_same_thread=False)
+    conn = sqlite3.connect("/root/mediaonlybot/mediaonly.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS restricted_topics (
+        CREATE TABLE IF NOT EXISTS media_only_topics (
             chat_id INTEGER,
             topic_id INTEGER,
             PRIMARY KEY (chat_id, topic_id)
@@ -23,6 +23,12 @@ def init_db():
     return conn, cursor
 
 conn, cursor = init_db()
+
+# --- Prüfen, ob User Admin/Gruppeninhaber ist ---
+async def is_admin(update: Update, user_id: int) -> bool:
+    chat_id = update.effective_chat.id
+    member = await update.effective_chat.get_member(user_id)
+    return member.status in [ChatMember.OWNER, ChatMember.ADMINISTRATOR]
 
 # --- Menü erstellen ---
 def get_menu():
@@ -36,6 +42,11 @@ def get_menu():
 
 # --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not await is_admin(update, user_id):
+        await update.message.reply_text("❌ Du bist kein Admin und kannst das Menü nicht nutzen.")
+        return
+
     if update.message:
         await update.message.reply_text("📜 **Themenverwaltung:**", reply_markup=get_menu(), parse_mode="Markdown")
     elif update.callback_query:
@@ -44,15 +55,21 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user_id = query.from_user.id
     chat_id = query.message.chat_id
+
+    if not await is_admin(update, user_id):
+        await query.answer("❌ Du bist kein Admin!", show_alert=True)
+        return
+
     await query.answer()
 
     if query.data == "add_topic":
         context.user_data["action"] = "add_topic"
-        await query.message.edit_text("📩 Bitte sende die **Themen-ID**, die du einschränken möchtest:", reply_markup=get_menu())
+        await query.message.edit_text("📩 Bitte sende die **Themen-ID**, die nur Medien erlauben soll:", reply_markup=get_menu())
 
     elif query.data == "del_topic":
-        cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
+        cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
 
         if not topics:
@@ -77,7 +94,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data.startswith("delete_"):
         topic_to_delete = int(query.data.replace("delete_", ""))
-        cursor.execute("DELETE FROM restricted_topics WHERE chat_id = ? AND topic_id = ?", (chat_id, topic_to_delete))
+        cursor.execute("DELETE FROM media_only_topics WHERE chat_id = ? AND topic_id = ?", (chat_id, topic_to_delete))
         conn.commit()
 
         if cursor.rowcount > 0:
@@ -86,7 +103,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_text("⚠️ Thema war nicht gespeichert.", reply_markup=get_menu(), parse_mode="Markdown")
 
     elif query.data == "list_topics":
-        cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
+        cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
         if topics:
             response = "📜 **Gespeicherte Themen:**\n" + "\n".join(f"- {topic[0]}" for topic in topics)
@@ -111,7 +128,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "add_topic":
             try:
                 topic_id = int(text)
-                cursor.execute("INSERT INTO restricted_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
+                cursor.execute("INSERT INTO media_only_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
                 conn.commit()
                 await update.message.reply_text(f"✅ Thema hinzugefügt: {topic_id}")
             except ValueError:
@@ -120,13 +137,13 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("⚠️ Thema ist bereits gespeichert.")
             return await show_menu(update, context)
 
-# --- Medien-Filter ---
+# --- Medien-Filter (Löscht alles außer Medien) ---
 async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
     topic_id = message.message_thread_id
 
-    cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
+    cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
     if topic_id in restricted_topics:
@@ -139,7 +156,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # Befehle
-    application.add_handler(CommandHandler("themenbot", show_menu))
+    application.add_handler(CommandHandler("mediaonlybot", show_menu))
     
     # Callback für Inline-Buttons
     application.add_handler(CallbackQueryHandler(button_callback))
@@ -150,7 +167,7 @@ def main():
     # Medien-Filter
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, filter_messages))
 
-    print("🤖 Themen-Bot gestartet...")
+    print("🤖 Media-Only-Bot gestartet...")
     application.run_polling()
 
 if __name__ == "__main__":
