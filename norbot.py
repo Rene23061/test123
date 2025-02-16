@@ -117,7 +117,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenprüfung (blockiert ALLES außer Admins) ---
+# --- Nachrichtenprüfung (blockiert **ALLE Nachrichten** von Nicht-Admins) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -134,7 +134,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
             if not ist_admin:
                 try:
                     await message.delete()
-                    print(f"❌ Nachricht von {user_id} in Thema {topic_id} gelöscht (alles verboten außer Admins)")
+                    print(f"❌ Nachricht von {user_id} in Thema {topic_id} gelöscht (ALLES verboten außer Admins)")
                 except Exception as e:
                     print(f"⚠ Fehler beim Löschen der Nachricht: {e}")
 
@@ -144,8 +144,8 @@ def main():
 
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.ALL, kontrolliere_nachricht))  # **ALLE Nachrichten blockieren**
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-    application.add_handler(MessageHandler(filters.ALL, kontrolliere_nachricht))  # Alle Nachrichten überprüfen
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
