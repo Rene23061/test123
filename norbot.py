@@ -140,9 +140,11 @@ def main():
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
+
+    # ✅ Fehlerhafte Filter wurden ersetzt ✅
     application.add_handler(MessageHandler(
         filters.TEXT | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | 
-        filters.ATTACHMENT | filters.STICKER | filters.ANIMATION, handle_media
+        filters.Document.ALL | filters.Animation.ALL, handle_media
     ))
 
     print("🤖 NoReadBot läuft...")
