@@ -1,11 +1,23 @@
 import sqlite3
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
 TOKEN = "8069716549:AAGfRNlsOIOlsMBZrAcsiB_IjV5yz3XOM8A"
 
-# --- Datenbankverbindung ---
+# --- Datenbankverbindung für Gruppen-Whitelist ---
+WHITELIST_DB_PATH = "cpkiller/whitelist.db"
+
+conn_whitelist = sqlite3.connect(WHITELIST_DB_PATH, check_same_thread=False)
+cursor_whitelist = conn_whitelist.cursor()
+
+# Prüft, ob die Gruppe für den Media-Only-Bot erlaubt ist
+def is_group_allowed(chat_id):
+    cursor_whitelist.execute("SELECT allow_MediaBot FROM allowed_groups WHERE chat_id = ? AND allow_MediaBot = 1", (chat_id,))
+    return cursor_whitelist.fetchone() is not None
+
+# --- Datenbankverbindung für gesperrte Themen ---
 def init_db():
     conn = sqlite3.connect("mediaonlybot.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -36,8 +48,14 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen (mit Admin-Prüfung) ---
+# --- Menü anzeigen (mit Whitelist-Prüfung) ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+
+    if not is_group_allowed(chat_id):
+        await update.message.reply_text("🚫 Diese Gruppe ist nicht für den Media-Only-Bot freigeschaltet!")
+        return
+
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
         msg = await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
@@ -146,7 +164,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    print("🤖 Media-Only Bot läuft...")
+    print("🤖 Media-Only Bot läuft mit Whitelist-Prüfung...")
     application.run_polling()
 
 if __name__ == "__main__":
