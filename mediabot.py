@@ -146,11 +146,14 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
 
         if topic_id in allowed_topics:
             ist_reiner_text = bool(message.text and not message.photo and not message.video and not message.animation)
-            enthaelt_link = bool(URL_PATTERN.search(message.text or ""))
+            enthaelt_link = bool(message.text and URL_PATTERN.search(message.text))
 
             if ist_reiner_text or enthaelt_link:
-                await message.delete()
-                return
+                try:
+                    await message.delete()
+                    print(f"❌ Nachricht von {user_id} gelöscht (Thema {topic_id})")
+                except Exception as e:
+                    print(f"⚠ Fehler beim Löschen: {e}")
 
 # --- Bot starten ---
 def main():
