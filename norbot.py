@@ -26,6 +26,20 @@ async def is_admin(update: Update, user_id: int) -> bool:
     chat_member = await update.effective_chat.get_member(user_id)
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
+# --- Funktion zum Speichern & Löschen aller Bot-Nachrichten ---
+async def save_and_delete_message(context, chat_id, message):
+    if "messages_to_delete" not in context.user_data:
+        context.user_data["messages_to_delete"] = []
+    context.user_data["messages_to_delete"].append(message.message_id)
+
+async def delete_all_bot_messages(context, chat_id):
+    for msg_id in context.user_data.get("messages_to_delete", []):
+        try:
+            await context.bot.delete_message(chat_id, msg_id)
+        except:
+            pass
+    context.user_data["messages_to_delete"] = []
+
 # --- Menü erstellen ---
 def get_menu():
     keyboard = [
@@ -39,14 +53,15 @@ def get_menu():
 # --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    chat_id = update.message.chat_id
+
     if not await is_admin(update, user_id):
         msg = await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
-        context.user_data["messages_to_delete"] = [msg.message_id]
+        await save_and_delete_message(context, chat_id, msg)
         return
 
     msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
-    context.user_data["menu_message_id"] = msg.message_id  
-    context.user_data["messages_to_delete"] = [msg.message_id]
+    await save_and_delete_message(context, chat_id, msg)
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,7 +81,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📩 Sende die ID des Themas, das du sperren möchtest:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")]])
         )
-        context.user_data["messages_to_delete"].append(msg.message_id)
+        await save_and_delete_message(context, chat_id, msg)
 
     elif query.data == "del_topic":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
@@ -74,40 +89,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not topics:
             msg = await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu())
-            context.user_data["messages_to_delete"].append(msg.message_id)
+            await save_and_delete_message(context, chat_id, msg)
             return
 
         keyboard = [[InlineKeyboardButton(f"Thema {topic[0]}", callback_data=f"confirm_del_{topic[0]}")] for topic in topics]
         keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")])
         msg = await query.message.edit_text("🔓 Wähle ein Thema zum Entsperren:", reply_markup=InlineKeyboardMarkup(keyboard))
-        context.user_data["messages_to_delete"].append(msg.message_id)
+        await save_and_delete_message(context, chat_id, msg)
 
     elif query.data.startswith("confirm_del_"):
         topic_id = int(query.data.replace("confirm_del_", ""))
         cursor.execute("DELETE FROM restricted_topics WHERE chat_id = ? AND topic_id = ?", (chat_id, topic_id))
         conn.commit()
         msg = await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu())
-        context.user_data["messages_to_delete"].append(msg.message_id)
+        await save_and_delete_message(context, chat_id, msg)
 
     elif query.data == "list_topics":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
         text = "📋 **Gesperrte Themen:**\n" + "\n".join(f"- Thema {topic[0]}" for topic in topics) if topics else "❌ Keine gesperrten Themen."
         msg = await query.message.edit_text(text, reply_markup=get_menu())
-        context.user_data["messages_to_delete"].append(msg.message_id)
+        await save_and_delete_message(context, chat_id, msg)
 
     elif query.data == "back_to_menu":
         context.user_data.pop("action", None)
         msg = await query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
-        context.user_data["messages_to_delete"].append(msg.message_id)
+        await save_and_delete_message(context, chat_id, msg)
 
     elif query.data == "close_menu":
         context.user_data.pop("action", None)
-        for msg_id in context.user_data.get("messages_to_delete", []):
-            try:
-                await context.bot.delete_message(chat_id, msg_id)
-            except:
-                pass
+        await delete_all_bot_messages(context, chat_id)
         await query.message.delete()
 
 # --- Nutzer-Eingabe für Themen-ID ---
@@ -125,10 +136,10 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 cursor.execute("INSERT INTO restricted_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
                 conn.commit()
                 msg = await update.message.reply_text(f"✅ Thema {topic_id} gesperrt.")
-                context.user_data["messages_to_delete"].append(msg.message_id)
+                await save_and_delete_message(context, chat_id, msg)
             except ValueError:
                 msg = await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
-                context.user_data["messages_to_delete"].append(msg.message_id)
+                await save_and_delete_message(context, chat_id, msg)
             return await show_menu(update, context)
 
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
@@ -155,10 +166,7 @@ def main():
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-
-    application.add_handler(MessageHandler(
-        filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.Sticker.ALL, handle_media
-    ))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.Sticker.ALL, handle_media))
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
