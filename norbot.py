@@ -117,7 +117,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenprüfung (Texte & Medien löschen) ---
+# --- Nachrichtenprüfung (Blockiert ALLES außer Admins) ---
 async def handle_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -133,9 +133,8 @@ async def handle_user_messages(update: Update, context: ContextTypes.DEFAULT_TYP
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
     if topic_id in restricted_topics:
-        # Prüfen, ob die Nachricht Text oder Medien ist
-        if message.text or message.photo or message.video or message.document or message.audio:
-            await message.delete()
+        print(f"🚫 Nachricht von {user_id} wird gelöscht: {message.text or 'MEDIUM'}")
+        await message.delete()
 
 # --- Bot starten ---
 def main():
@@ -146,7 +145,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    # Nachrichten löschen (Texte & Medien)
+    # ALLES LÖSCHEN außer Admins
     application.add_handler(MessageHandler(filters.ALL, handle_user_messages))
 
     print("🤖 NoReadBot läuft...")
