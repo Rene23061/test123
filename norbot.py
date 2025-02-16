@@ -27,33 +27,29 @@ async def is_admin(update: Update, user_id: int) -> bool:
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
 # --- Menü erstellen ---
-def get_menu():
+def get_menu(is_submenu=False):
     keyboard = [
         [InlineKeyboardButton("➕ Thema sperren", callback_data="add_topic")],
         [InlineKeyboardButton("❌ Thema entsperren", callback_data="del_topic")],
-        [InlineKeyboardButton("📋 Gesperrte Themen anzeigen", callback_data="list_topics")],
-        [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")],
-        [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
+        [InlineKeyboardButton("📋 Gesperrte Themen anzeigen", callback_data="list_topics")]
     ]
+    if is_submenu:
+        keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")])
+    keyboard.append([InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")])
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen ---
+# --- Menü anzeigen (mit Admin-Prüfung) ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
     if not await is_admin(update, user_id):
-        if update.message:
-            await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
-        elif update.callback_query:
-            await update.callback_query.answer("🚫 Du musst Admin sein, um dieses Menü zu öffnen!", show_alert=True)
+        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
         return
 
-    if update.message:
-        msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
-    elif update.callback_query:
-        msg = await update.callback_query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
+    # **WICHTIG**: Zustand zurücksetzen, falls noch eine Aktion läuft!
+    context.user_data.pop("action", None)
 
-    context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
+    msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
+    context.user_data["menu_message_id"] = msg.message_id
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,14 +65,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "add_topic":
         context.user_data["action"] = "add_topic"
-        await query.message.edit_text("📩 Sende die ID des Themas, das du sperren möchtest:", reply_markup=get_menu())
+        await query.message.edit_text("📩 Sende die ID des Themas, das du sperren möchtest:", reply_markup=get_menu(is_submenu=True))
 
     elif query.data == "del_topic":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
 
         if not topics:
-            await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu())
+            await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu(is_submenu=True))
             return
 
         keyboard = [[InlineKeyboardButton(f"Thema {topic[0]}", callback_data=f"confirm_del_{topic[0]}")] for topic in topics]
@@ -87,18 +83,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         topic_id = int(query.data.replace("confirm_del_", ""))
         cursor.execute("DELETE FROM restricted_topics WHERE chat_id = ? AND topic_id = ?", (chat_id, topic_id))
         conn.commit()
-        await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu())
+        await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu(is_submenu=True))
 
     elif query.data == "list_topics":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
         text = "📋 **Gesperrte Themen:**\n" + "\n".join(f"- Thema {topic[0]}" for topic in topics) if topics else "❌ Keine gesperrten Themen."
-        await query.message.edit_text(text, reply_markup=get_menu())
+        await query.message.edit_text(text, reply_markup=get_menu(is_submenu=True))
 
     elif query.data == "back_to_menu":
-        await show_menu(update, context)
+        # **WICHTIG**: Zustand zurücksetzen!
+        context.user_data.pop("action", None)
+        await query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
 
     elif query.data == "close_menu":
+        # **Menü + vorherige Nachrichten löschen**
         if "menu_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
@@ -111,7 +110,6 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
 
-    # Prüfen, ob eine Aktion aktiv ist
     if "action" in context.user_data:
         action = context.user_data.pop("action")
 
@@ -125,15 +123,12 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-    # Nachrichtenprüfung (Löscht ALLE Nachrichten, auch Medien!)
+    # Nachrichtenprüfung (löscht, wenn nicht Admin/Inhaber)
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
     if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
-        try:
-            await update.message.delete()
-        except Exception as e:
-            print(f"Fehler beim Löschen: {e}")
+        await update.message.delete()
 
 # --- Bot starten ---
 def main():
@@ -141,7 +136,7 @@ def main():
 
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_user_input))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
