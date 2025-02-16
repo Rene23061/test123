@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -6,14 +7,13 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 # --- Telegram-Bot-Token ---
 TOKEN = "8069716549:AAGfRNlsOIOlsMBZrAcsiB_IjV5yz3XOM8A"
 
-# --- Sicherstellen, dass der Ordner existiert ---
+# --- Datenbank-Setup ---
 DB_FOLDER = "/root/mediabot"
 DB_PATH = os.path.join(DB_FOLDER, "mediabot.db")
 
 if not os.path.exists(DB_FOLDER):
-    os.makedirs(DB_FOLDER)  
+    os.makedirs(DB_FOLDER)
 
-# --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     cursor = conn.cursor()
@@ -28,6 +28,15 @@ def init_db():
     return conn, cursor
 
 conn, cursor = init_db()
+
+# --- URL-Pattern zur Erkennung von Links ---
+URL_PATTERN = re.compile(
+    r'((http|https):\/\/)?'  
+    r'(www\.)?'              
+    r'[-a-zA-Z0-9@:%._\+~#=]{1,256}\.'  
+    r'[a-zA-Z0-9()]{1,6}\b'  
+    r'([-a-zA-Z0-9()@:%_\+.~#?&//=]*)'  
+)
 
 # --- Prüfen, ob der Benutzer ein Admin ist ---
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -118,27 +127,7 @@ def get_back_menu():
     keyboard = [[InlineKeyboardButton("🔙 Zurück zum Menü", callback_data="back_to_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Nachrichten-Handler für Eingaben (Themen-ID) ---
-async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    text = update.message.text.strip()
-
-    if "action" in context.user_data:
-        action = context.user_data.pop("action")
-
-        if action == "add_topic":
-            try:
-                topic_id = int(text)
-                cursor.execute("INSERT INTO allowed_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
-                conn.commit()
-                await update.message.reply_text(f"✅ Thema {topic_id} wurde hinzugefügt.")
-            except sqlite3.IntegrityError:
-                await update.message.reply_text("⚠️ Dieses Thema ist bereits gespeichert.")
-            except ValueError:
-                await update.message.reply_text("❌ Ungültige Themen-ID! Bitte sende eine Zahl.")
-            return await show_menu(update, context)
-
-# --- Nachrichtenkontrolle (Nur Medien ohne Text erlauben) ---
+# --- Nachrichtenkontrolle (Nur Medien erlauben) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -149,11 +138,11 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
-            # Nachricht löschen, wenn:
-            # 1. Sie nur Text ist
-            # 2. Sie Medien enthält, aber zusätzlich Text hat
-            if (message.text and not message.photo and not message.video) or \
-               (message.caption and (message.photo or message.video)):
+            # Prüfen, ob Nachricht nur Text enthält oder nur einen Link
+            ist_reiner_text = bool(message.text and not message.photo and not message.video)
+            enthaelt_link = bool(URL_PATTERN.search(message.text or ""))
+
+            if ist_reiner_text or enthaelt_link:
                 await message.delete()
                 return
 
@@ -168,7 +157,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
 
     # Nachrichten-Handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht))
     application.add_handler(MessageHandler(filters.ALL, kontrolliere_nachricht))
 
     print("🤖 Medien-Only Bot gestartet...")
