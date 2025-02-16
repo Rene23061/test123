@@ -45,8 +45,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
         return
 
-    # **WICHTIG**: Zustand zurücksetzen, falls noch eine Aktion läuft!
-    context.user_data.pop("action", None)
+    context.user_data.pop("action", None)  # Setzt den Zustand zurück
 
     msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
     context.user_data["menu_message_id"] = msg.message_id
@@ -92,12 +91,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(text, reply_markup=get_menu(is_submenu=True))
 
     elif query.data == "back_to_menu":
-        # **WICHTIG**: Zustand zurücksetzen!
         context.user_data.pop("action", None)
         await query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
 
     elif query.data == "close_menu":
-        # **Menü + vorherige Nachrichten löschen**
         if "menu_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
@@ -105,7 +102,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         await query.message.delete()
 
-# --- Nutzer-Eingabe für Themen-ID ---
+# --- Nachrichtenprüfung (ALLE Nachrichten in gesperrten Themen löschen) ---
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -123,10 +120,24 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-    # Nachrichtenprüfung (löscht, wenn nicht Admin/Inhaber)
+    # Gesperrte Themen aus der Datenbank holen
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
+    # Falls Nachricht in gesperrtem Thema + User kein Admin → Löschen
+    if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
+        await update.message.delete()
+
+# --- Filter für ALLE Nachrichtentypen, außer Befehle ---
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    user_id = update.message.from_user.id
+
+    # Gesperrte Themen aus der Datenbank holen
+    cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
+    restricted_topics = {row[0] for row in cursor.fetchall()}
+
+    # Falls Nachricht in gesperrtem Thema + User kein Admin → Löschen
     if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
         await update.message.delete()
 
@@ -136,7 +147,18 @@ def main():
 
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
+
+    # Filter für ALLE Nachrichtenarten (Text, Medien, Dokumente etc.)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND | 
+        filters.PHOTO | 
+        filters.VIDEO | 
+        filters.AUDIO | 
+        filters.VOICE | 
+        filters.DOCUMENT | 
+        filters.STICKER | 
+        filters.ANIMATION, handle_media
+    ))
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
