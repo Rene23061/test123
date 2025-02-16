@@ -37,14 +37,21 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen (mit Admin-Prüfung) ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     if not await is_admin(update, user_id):
-        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        if update.message:
+            await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
         return
 
-    msg = await update.message.reply_text("🎥 Medien-Only Themen-Verwaltung:", reply_markup=get_menu())
+    if update.message:
+        msg = await update.message.reply_text("📸 Medien-Only Themen-Verwaltung:", reply_markup=get_menu())
+    elif update.callback_query:
+        query = update.callback_query
+        msg = await query.message.edit_text("📸 Medien-Only Themen-Verwaltung:", reply_markup=get_menu())
+
     context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
 
 # --- Callback für Inline-Buttons ---
@@ -91,7 +98,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_menu(update, context)
 
     elif query.data == "close_menu":
-        # Löscht das Menü + vorherige Nachricht
         if "menu_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
@@ -118,7 +124,6 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-    # Nachrichtenprüfung (löscht, wenn nicht Admin/Inhaber)
     cursor.execute("SELECT topic_id FROM media_only_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
