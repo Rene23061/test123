@@ -1,5 +1,4 @@
 import os
-import re
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -29,16 +28,7 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- URL-Pattern zur Erkennung von Links ---
-URL_PATTERN = re.compile(
-    r'((http|https):\/\/)?'  
-    r'(www\.)?'              
-    r'[-a-zA-Z0-9@:%._\+~#=]{1,256}\.'  
-    r'[a-zA-Z0-9()]{1,6}\b'  
-    r'([-a-zA-Z0-9()@:%_\+.~#?&//=]*)'  
-)
-
-# --- Prüfen, ob der Benutzer ein Admin ist ---
+# --- Admin-Prüfung ---
 async def is_admin(update: Update, user_id: int) -> bool:
     chat_member = await update.effective_chat.get_member(user_id)
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
@@ -53,7 +43,7 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen (mit Admin-Prüfung) ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
@@ -61,7 +51,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     msg = await update.message.reply_text("📷 **Medien-Only Bot Menü:**", reply_markup=get_menu(), parse_mode="Markdown")
-    context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
+    context.user_data["menu_message_id"] = msg.message_id
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -145,13 +135,13 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
+            # Prüfen, ob die Nachricht Medien enthält (Bilder, Videos, GIFs)
             ist_reiner_text = bool(message.text and not message.photo and not message.video and not message.animation)
-            enthaelt_link = bool(message.text and URL_PATTERN.search(message.text))
 
-            if ist_reiner_text or enthaelt_link:
+            if ist_reiner_text:
                 try:
                     await message.delete()
-                    print(f"❌ Nachricht von {user_id} gelöscht (Thema {topic_id})")
+                    print(f"❌ Text-Nachricht von {user_id} gelöscht (Thema {topic_id})")
                 except Exception as e:
                     print(f"⚠ Fehler beim Löschen: {e}")
 
