@@ -11,7 +11,7 @@ DB_FOLDER = "/root/mediabot"
 DB_PATH = os.path.join(DB_FOLDER, "mediabot.db")
 
 if not os.path.exists(DB_FOLDER):
-    os.makedirs(DB_FOLDER)  # Falls der Ordner nicht existiert, erstelle ihn
+    os.makedirs(DB_FOLDER)  
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
 def init_db():
@@ -34,10 +34,9 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     member = await context.bot.get_chat_member(chat_id, user_id)
-
     return member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
-# --- Menü erstellen ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Nur Admins können das Menü verwenden!")
@@ -139,7 +138,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Themen-ID! Bitte sende eine Zahl.")
             return await show_menu(update, context)
 
-# --- Nachrichtenkontrolle (nur Medien erlauben, ohne Text) ---
+# --- Nachrichtenkontrolle (Nur Medien ohne Text erlauben) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -150,7 +149,11 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
-            if message.text or (not message.photo and not message.video):
+            # Nachricht löschen, wenn:
+            # 1. Sie nur Text ist
+            # 2. Sie Medien enthält, aber zusätzlich Text hat
+            if (message.text and not message.photo and not message.video) or \
+               (message.caption and (message.photo or message.video)):
                 await message.delete()
                 return
 
