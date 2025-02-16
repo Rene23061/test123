@@ -37,7 +37,7 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen (Fix für Nachrichten & Callback-Queries) ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
@@ -110,14 +110,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
-    text = update.message.text.strip()
 
+    # Prüfen, ob eine Aktion aktiv ist
     if "action" in context.user_data:
         action = context.user_data.pop("action")
 
         if action == "add_topic":
             try:
-                topic_id = int(text)
+                topic_id = int(update.message.text.strip())
                 cursor.execute("INSERT INTO restricted_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
                 conn.commit()
                 await update.message.reply_text(f"✅ Thema {topic_id} gesperrt.")
@@ -125,15 +125,15 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-    # Nachrichtenprüfung (Blockiert ALLES außer Admins)
+    # Nachrichtenprüfung (Löscht ALLE Nachrichten, auch Medien!)
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
     if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
         try:
             await update.message.delete()
-        except:
-            pass
+        except Exception as e:
+            print(f"Fehler beim Löschen: {e}")
 
 # --- Bot starten ---
 def main():
