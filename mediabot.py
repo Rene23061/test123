@@ -135,10 +135,11 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
-            # Prüfen, ob die Nachricht Medien enthält (Bilder, Videos, GIFs)
-            ist_reiner_text = bool(message.text and not message.photo and not message.video and not message.animation)
+            # Prüfen, ob die Nachricht **KEIN** Medium enthält
+            hat_text = bool(message.text)
+            hat_keine_medien = not message.photo and not message.video and not message.animation and not message.document and not message.audio
 
-            if ist_reiner_text:
+            if hat_text and hat_keine_medien:
                 try:
                     await message.delete()
                     print(f"❌ Text-Nachricht von {user_id} gelöscht (Thema {topic_id})")
