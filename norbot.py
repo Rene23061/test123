@@ -36,7 +36,7 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen (nur für Admins) ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
@@ -44,7 +44,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
-    context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
+    context.user_data["menu_message_id"] = msg.message_id  
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,7 +90,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_menu(update, context)
 
     elif query.data == "close_menu":
-        # Löscht das Menü + vorherige Nachricht
         if "menu_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
@@ -117,24 +116,31 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenprüfung (löscht ALLES außer Admins) ---
+# --- Nachrichtenprüfung (DEBUGGING) ---
 async def handle_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
     topic_id = message.message_thread_id
     user_id = message.from_user.id
 
+    # Debugging: Welche Nachricht wird empfangen?
+    msg_type = "Text" if message.text else "Medien"
+    print(f"\n📩 Nachricht erhalten: Typ = {msg_type}, Thread ID = {topic_id}, User = {user_id}")
+
     # Admin-Check
     if await is_admin(update, user_id):
-        return  # Admins dürfen schreiben
+        print("✅ Nachricht erlaubt (Admin).")
+        return  
 
     # Prüfen, ob das Thema gesperrt ist
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
     if topic_id in restricted_topics:
-        print(f"❌ Nachricht gelöscht (Text oder Medien) von {user_id} in Thema {topic_id}")
+        print(f"❌ Nachricht von {user_id} wird gelöscht! (Gesperrtes Thema: {topic_id})")
         await message.delete()
+    else:
+        print("✅ Nachricht erlaubt (Thema nicht gesperrt).")
 
 # --- Bot starten ---
 def main():
