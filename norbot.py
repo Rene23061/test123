@@ -36,7 +36,7 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen (mit Admin-Prüfung) ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
@@ -118,7 +118,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenfilterung (Löscht alles außer von Admins) ---
+# --- **Erweiterter Nachrichtenfilter (löscht alle Nachrichtentypen außer Admins)** ---
 async def delete_unauthorized_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -142,10 +142,8 @@ def main():
 
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.DOCUMENT | filters.STICKER | filters.VOICE | filters.ANIMATION, delete_unauthorized_messages))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
-    
-    # Nachrichten-Handler zum Löschen unerlaubter Nachrichten
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, delete_unauthorized_messages))
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
