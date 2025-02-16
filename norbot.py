@@ -1,4 +1,3 @@
-import re
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -37,14 +36,14 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen (mit Admin-Prüfung) ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
         await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
         return
     
-    msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
+    msg = await update.message.reply_text("🚫 Keine Nachrichten in gesperrten Themen!", reply_markup=get_menu())
     context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
 
 # --- Callback für Inline-Buttons ---
@@ -118,12 +117,26 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-    # Nachrichtenprüfung (löscht, wenn nicht Admin/Inhaber)
-    cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
-    restricted_topics = {row[0] for row in cursor.fetchall()}
+# --- Nachrichtenprüfung (blockiert ALLES außer Admins) ---
+async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    chat_id = message.chat_id
+    user_id = message.from_user.id
+    topic_id = message.message_thread_id if message.is_topic_message else None
 
-    if update.message.message_thread_id in restricted_topics and not await is_admin(update, user_id):
-        await update.message.delete()
+    if topic_id:
+        cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
+        restricted_topics = {row[0] for row in cursor.fetchall()}
+
+        if topic_id in restricted_topics:
+            ist_admin = await is_admin(update, user_id)
+
+            if not ist_admin:
+                try:
+                    await message.delete()
+                    print(f"❌ Nachricht von {user_id} in Thema {topic_id} gelöscht (alles verboten außer Admins)")
+                except Exception as e:
+                    print(f"⚠ Fehler beim Löschen der Nachricht: {e}")
 
 # --- Bot starten ---
 def main():
@@ -132,6 +145,7 @@ def main():
     application.add_handler(CommandHandler("noread", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
+    application.add_handler(MessageHandler(filters.ALL, kontrolliere_nachricht))  # Alle Nachrichten überprüfen
 
     print("🤖 NoReadBot läuft...")
     application.run_polling()
