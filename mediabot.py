@@ -157,8 +157,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
 
     # Nachrichten-Handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, kontrolliere_nachricht))
-    application.add_handler(MessageHandler(filters.ALL, kontrolliere_nachricht))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, kontrolliere_nachricht))
 
     print("🤖 Medien-Only Bot gestartet...")
     application.run_polling()
