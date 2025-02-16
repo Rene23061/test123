@@ -32,6 +32,7 @@ def get_menu():
         [InlineKeyboardButton("➕ Thema sperren", callback_data="add_topic")],
         [InlineKeyboardButton("❌ Thema entsperren", callback_data="del_topic")],
         [InlineKeyboardButton("📋 Gesperrte Themen anzeigen", callback_data="list_topics")],
+        [InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")],
         [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -116,20 +117,15 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenprüfung (DEBUGGING) ---
+# --- Nachrichtenprüfung (Texte & Medien löschen) ---
 async def handle_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
     topic_id = message.message_thread_id
     user_id = message.from_user.id
 
-    # Debugging: Welche Nachricht wird empfangen?
-    msg_type = "Text" if message.text else "Medien"
-    print(f"\n📩 Nachricht erhalten: Typ = {msg_type}, Thread ID = {topic_id}, User = {user_id}")
-
     # Admin-Check
     if await is_admin(update, user_id):
-        print("✅ Nachricht erlaubt (Admin).")
         return  
 
     # Prüfen, ob das Thema gesperrt ist
@@ -137,10 +133,9 @@ async def handle_user_messages(update: Update, context: ContextTypes.DEFAULT_TYP
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
     if topic_id in restricted_topics:
-        print(f"❌ Nachricht von {user_id} wird gelöscht! (Gesperrtes Thema: {topic_id})")
-        await message.delete()
-    else:
-        print("✅ Nachricht erlaubt (Thema nicht gesperrt).")
+        # Prüfen, ob die Nachricht Text oder Medien ist
+        if message.text or message.photo or message.video or message.document or message.audio:
+            await message.delete()
 
 # --- Bot starten ---
 def main():
@@ -151,7 +146,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
 
-    # Nachrichten löschen
+    # Nachrichten löschen (Texte & Medien)
     application.add_handler(MessageHandler(filters.ALL, handle_user_messages))
 
     print("🤖 NoReadBot läuft...")
