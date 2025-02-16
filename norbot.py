@@ -87,7 +87,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(text, reply_markup=get_menu())
 
     elif query.data == "back_to_menu":
-        await show_menu(update, context)
+        await query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
 
     elif query.data == "close_menu":
         if "menu_message_id" in context.user_data:
