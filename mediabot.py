@@ -14,8 +14,8 @@ cursor_whitelist = conn_whitelist.cursor()
 
 # Prüft, ob die Gruppe für den Media-Only-Bot erlaubt ist
 def is_group_allowed(chat_id):
-    cursor_whitelist.execute("SELECT allow_MediaBot FROM allowed_groups WHERE chat_id = ? AND allow_MediaBot = 1", (chat_id,))
-    return cursor_whitelist.fetchone() is not None
+    cursor.execute("SELECT allow_MediaOnlyBot FROM allowed_groups WHERE chat_id = ? AND allow_MediaOnlyBot = 1", (chat_id,))
+    return cursor.fetchone() is not None
 
 # --- Datenbankverbindung für gesperrte Themen ---
 def init_db():
