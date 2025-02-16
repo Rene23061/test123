@@ -40,11 +40,13 @@ def get_menu():
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
-        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        msg = await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        context.user_data["messages_to_delete"] = [msg.message_id]
         return
 
     msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
     context.user_data["menu_message_id"] = msg.message_id  
+    context.user_data["messages_to_delete"] = [msg.message_id]
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,44 +62,50 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "add_topic":
         context.user_data["action"] = "add_topic"
-        await query.message.edit_text(
+        msg = await query.message.edit_text(
             "📩 Sende die ID des Themas, das du sperren möchtest:",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")]])
         )
+        context.user_data["messages_to_delete"].append(msg.message_id)
 
     elif query.data == "del_topic":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
 
         if not topics:
-            await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu())
+            msg = await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu())
+            context.user_data["messages_to_delete"].append(msg.message_id)
             return
 
         keyboard = [[InlineKeyboardButton(f"Thema {topic[0]}", callback_data=f"confirm_del_{topic[0]}")] for topic in topics]
         keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")])
-        await query.message.edit_text("🔓 Wähle ein Thema zum Entsperren:", reply_markup=InlineKeyboardMarkup(keyboard))
+        msg = await query.message.edit_text("🔓 Wähle ein Thema zum Entsperren:", reply_markup=InlineKeyboardMarkup(keyboard))
+        context.user_data["messages_to_delete"].append(msg.message_id)
 
     elif query.data.startswith("confirm_del_"):
         topic_id = int(query.data.replace("confirm_del_", ""))
         cursor.execute("DELETE FROM restricted_topics WHERE chat_id = ? AND topic_id = ?", (chat_id, topic_id))
         conn.commit()
-        await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu())
+        msg = await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu())
+        context.user_data["messages_to_delete"].append(msg.message_id)
 
     elif query.data == "list_topics":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
         text = "📋 **Gesperrte Themen:**\n" + "\n".join(f"- Thema {topic[0]}" for topic in topics) if topics else "❌ Keine gesperrten Themen."
-        await query.message.edit_text(text, reply_markup=get_menu())
+        msg = await query.message.edit_text(text, reply_markup=get_menu())
+        context.user_data["messages_to_delete"].append(msg.message_id)
 
     elif query.data == "back_to_menu":
-        context.user_data.pop("action", None)  # ❗ Eingabe-Modus abbrechen!
-        await query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
+        context.user_data.pop("action", None)
+        msg = await query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
+        context.user_data["messages_to_delete"].append(msg.message_id)
 
     elif query.data == "close_menu":
-        context.user_data.pop("action", None)  # ❗ Eingabe-Modus abbrechen!
-        if "menu_message_id" in context.user_data:
+        context.user_data.pop("action", None)
+        for msg_id in context.user_data.get("messages_to_delete", []):
             try:
-                await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
+                await context.bot.delete_message(chat_id, msg_id)
             except:
                 pass
         await query.message.delete()
@@ -109,19 +117,20 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if "action" in context.user_data:
-        action = context.user_data.pop("action")  # ❗ Nach Eingabe entfernen!
+        action = context.user_data.pop("action")
 
         if action == "add_topic":
             try:
                 topic_id = int(text)
                 cursor.execute("INSERT INTO restricted_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
                 conn.commit()
-                await update.message.reply_text(f"✅ Thema {topic_id} gesperrt.")
+                msg = await update.message.reply_text(f"✅ Thema {topic_id} gesperrt.")
+                context.user_data["messages_to_delete"].append(msg.message_id)
             except ValueError:
-                await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
+                msg = await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
+                context.user_data["messages_to_delete"].append(msg.message_id)
             return await show_menu(update, context)
 
-    # Nachrichtenprüfung (löscht, wenn nicht Admin/Inhaber)
     cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
     restricted_topics = {row[0] for row in cursor.fetchall()}
 
