@@ -1,5 +1,4 @@
 import sqlite3
-import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
@@ -8,16 +7,15 @@ TOKEN = "8069716549:AAGfRNlsOIOlsMBZrAcsiB_IjV5yz3XOM8A"
 
 # --- Datenbankverbindung für Gruppen-Whitelist ---
 WHITELIST_DB_PATH = "/root/cpkiller/whitelist.db"
-
 conn_whitelist = sqlite3.connect(WHITELIST_DB_PATH, check_same_thread=False)
 cursor_whitelist = conn_whitelist.cursor()
 
 # Prüft, ob die Gruppe für den Media-Only-Bot erlaubt ist
 def is_group_allowed(chat_id):
-    cursor.execute("SELECT allow_MediaOnlyBot FROM allowed_groups WHERE chat_id = ? AND allow_MediaOnlyBot = 1", (chat_id,))
-    return cursor.fetchone() is not None
+    cursor_whitelist.execute("SELECT allow_MediaOnlyBot FROM allowed_groups WHERE chat_id = ? AND allow_MediaOnlyBot = 1", (chat_id,))
+    return cursor_whitelist.fetchone() is not None
 
-# --- Datenbankverbindung für gesperrte Themen ---
+# --- Datenbank für gesperrte Themen ---
 def init_db():
     conn = sqlite3.connect("mediaonlybot.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -52,6 +50,7 @@ def get_menu():
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
+    # ❌ Gruppe nicht erlaubt? Abbruch!
     if not is_group_allowed(chat_id):
         await update.message.reply_text("🚫 Diese Gruppe ist nicht für den Media-Only-Bot freigeschaltet!")
         return
@@ -132,6 +131,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
+
+    # ❌ Gruppe nicht erlaubt? Nachricht ignorieren!
+    if not is_group_allowed(chat_id):
+        return
 
     if "action" in context.user_data:
         action = context.user_data.pop("action")
