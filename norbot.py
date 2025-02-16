@@ -37,12 +37,15 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen ---
+# --- Menü anzeigen (mit Admin-Prüfung) ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
-    elif update.callback_query:
-        await update.callback_query.message.edit_text("🔒 Themen-Management:", reply_markup=get_menu())
+    user_id = update.effective_user.id
+    if not await is_admin(update, user_id):
+        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        return
+    
+    msg = await update.message.reply_text("🔒 Themen-Management:", reply_markup=get_menu())
+    context.user_data["menu_message_id"] = msg.message_id  # Speichert die Menü-ID
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,6 +91,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_menu(update, context)
 
     elif query.data == "close_menu":
+        # Löscht das Menü + vorherige Nachricht
+        if "menu_message_id" in context.user_data:
+            try:
+                await context.bot.delete_message(chat_id, context.user_data["menu_message_id"])
+            except:
+                pass
         await query.message.delete()
 
 # --- Nutzer-Eingabe für Themen-ID ---
