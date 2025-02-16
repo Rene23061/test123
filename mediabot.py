@@ -139,7 +139,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Themen-ID! Bitte sende eine Zahl.")
             return await show_menu(update, context)
 
-# --- Nachrichtenkontrolle (nur Medien erlauben) ---
+# --- Nachrichtenkontrolle (nur Medien erlauben, ohne Text) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -150,7 +150,7 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
-            if not message.photo and not message.video:
+            if message.text or (not message.photo and not message.video):
                 await message.delete()
                 return
 
