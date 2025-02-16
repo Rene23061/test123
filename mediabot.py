@@ -123,7 +123,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
             return await show_menu(update, context)
 
-# --- Nachrichtenkontrolle (Nur Medien erlauben) ---
+# --- Nachrichtenkontrolle (Nur Medien erlaubt) ---
 async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     chat_id = message.chat_id
@@ -135,14 +135,14 @@ async def kontrolliere_nachricht(update: Update, context: ContextTypes.DEFAULT_T
         allowed_topics = {row[0] for row in cursor.fetchall()}
 
         if topic_id in allowed_topics:
-            # Prüfen, ob die Nachricht KEIN Medium enthält
+            hat_medien = message.photo or message.video or message.document or message.audio or message.animation
             hat_text = bool(message.text)
-            hat_keine_medien = not (message.photo or message.video or message.animation or message.document or message.audio)
 
-            if hat_text and hat_keine_medien:
+            # ❌ Falls KEIN Medium vorhanden ist, Nachricht löschen
+            if not hat_medien:
                 try:
                     await message.delete()
-                    print(f"❌ Text-Nachricht von {user_id} gelöscht (Thema {topic_id})")
+                    print(f"❌ Nachricht gelöscht (kein Medium) in Thema {topic_id}")
                 except Exception as e:
                     print(f"⚠ Fehler beim Löschen: {e}")
 
