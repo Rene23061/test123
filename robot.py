@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMem
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # --- Telegram-Bot-Token ---
-TOKEN = "NEUER_TELEGRAM_BOT_TOKEN"
+TOKEN = "7714790321:AAFEyiy0PExl2oyCTuwCeNXJTd8i9B8pLP8"
 
 # --- Datenbankverbindung für Gruppen-Whitelist ---
 WHITELIST_DB_PATH = "/root/cpkiller/whitelist.db"
