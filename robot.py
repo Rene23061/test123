@@ -10,14 +10,14 @@ WHITELIST_DB_PATH = "/root/cpkiller/whitelist.db"
 conn_whitelist = sqlite3.connect(WHITELIST_DB_PATH, check_same_thread=False)
 cursor_whitelist = conn_whitelist.cursor()
 
-# Prüft, ob die Gruppe für den Read-Only-Bot erlaubt ist
+# Prüft, ob die Gruppe für den NoReadBot erlaubt ist
 def is_group_allowed(chat_id):
     cursor_whitelist.execute("SELECT allow_ReadOnlyBot FROM allowed_groups WHERE chat_id = ? AND allow_ReadOnlyBot = 1", (chat_id,))
     return cursor_whitelist.fetchone() is not None
 
 # --- Datenbank für gesperrte Themen ---
 def init_db():
-    conn = sqlite3.connect("/root/readonlybot.db", check_same_thread=False)  # Datenbankpfad korrigiert
+    conn = sqlite3.connect("readonlybot.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS restricted_topics (
@@ -36,6 +36,26 @@ async def is_admin(update: Update, user_id: int) -> bool:
     chat_member = await update.effective_chat.get_member(user_id)
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
+# --- Nachrichten filtern (Nur Text erlauben, Medien blockieren) ---
+async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user_id = update.message.from_user.id
+
+    # ❌ Gruppe nicht erlaubt? Nachricht ignorieren!
+    if not is_group_allowed(chat_id):
+        return
+
+    # Admins dürfen weiterhin alles senden
+    if await is_admin(update, user_id):
+        return
+
+    # Nur Textnachrichten sind erlaubt, alles andere wird gelöscht
+    if not update.message.text:
+        try:
+            await update.message.delete()
+        except:
+            pass
+
 # --- Menü erstellen ---
 def get_menu():
     keyboard = [
@@ -46,20 +66,34 @@ def get_menu():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- Menü anzeigen ---
+# --- Menü anzeigen (mit Whitelist-Prüfung) ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
+    # ❌ Gruppe nicht erlaubt? Abbruch!
     if not is_group_allowed(chat_id):
-        await update.message.reply_text("🚫 Diese Gruppe ist nicht für den Read-Only-Bot freigeschaltet!")
+        await update.message.reply_text("🚫 Diese Gruppe ist nicht für den NoReadBot freigeschaltet!")
         return
 
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
-        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        msg = await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        context.user_data.setdefault("bot_messages", []).append(msg.message_id)
         return
 
-    await update.message.reply_text("📷 Read-Only Themen-Verwaltung:", reply_markup=get_menu())
+    msg = await update.message.reply_text("🔒 No-Text Themen-Verwaltung:", reply_markup=get_menu())
+    context.user_data.setdefault("bot_messages", []).append(msg.message_id)
+
+# --- Alle Bot-Nachrichten löschen ---
+async def delete_bot_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if "bot_messages" in context.user_data:
+        for msg_id in context.user_data["bot_messages"]:
+            try:
+                await context.bot.delete_message(chat_id, msg_id)
+            except:
+                pass
+        context.user_data["bot_messages"] = []
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,66 +109,53 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "add_topic":
         context.user_data["action"] = "add_topic"
-        await query.message.edit_text("📩 Sende die ID des Themas, das du sperren möchtest:", reply_markup=get_menu())
+        msg = await query.message.edit_text("📩 Sende die ID des Themas, das du sperren möchtest:", reply_markup=get_menu())
+        context.user_data.setdefault("bot_messages", []).append(msg.message_id)
 
     elif query.data == "del_topic":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
 
         if not topics:
-            await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu())
+            msg = await query.message.edit_text("❌ Keine gesperrten Themen.", reply_markup=get_menu())
+            context.user_data.setdefault("bot_messages", []).append(msg.message_id)
             return
 
         keyboard = [[InlineKeyboardButton(f"Thema {topic[0]}", callback_data=f"confirm_del_{topic[0]}")] for topic in topics]
         keyboard.append([InlineKeyboardButton("🔙 Zurück", callback_data="back_to_menu")])
-        await query.message.edit_text("🔓 Wähle ein Thema zum Entsperren:", reply_markup=InlineKeyboardMarkup(keyboard))
+        msg = await query.message.edit_text("🔓 Wähle ein Thema zum Entsperren:", reply_markup=InlineKeyboardMarkup(keyboard))
+        context.user_data.setdefault("bot_messages", []).append(msg.message_id)
 
     elif query.data.startswith("confirm_del_"):
         topic_id = int(query.data.replace("confirm_del_", ""))
         cursor.execute("DELETE FROM restricted_topics WHERE chat_id = ? AND topic_id = ?", (chat_id, topic_id))
         conn.commit()
-        await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu())
+        msg = await query.message.edit_text(f"✅ Thema {topic_id} entsperrt.", reply_markup=get_menu())
+        context.user_data.setdefault("bot_messages", []).append(msg.message_id)
 
     elif query.data == "list_topics":
         cursor.execute("SELECT topic_id FROM restricted_topics WHERE chat_id = ?", (chat_id,))
         topics = cursor.fetchall()
         text = "📋 **Gesperrte Themen:**\n" + "\n".join(f"- Thema {topic[0]}" for topic in topics) if topics else "❌ Keine gesperrten Themen."
-        await query.message.edit_text(text, reply_markup=get_menu())
+        msg = await query.message.edit_text(text, reply_markup=get_menu())
+        context.user_data.setdefault("bot_messages", []).append(msg.message_id)
 
     elif query.data == "back_to_menu":
         await show_menu(update, context)
 
     elif query.data == "close_menu":
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
+        await delete_bot_messages(update, context)
+        await query.message.delete()
 
-# --- Nachrichtenprüfung (❗ KORREKT ANGEPASST) ---
-async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
-
-    if not is_group_allowed(chat_id):
-        return
-
-    # ✅ Admins dürfen alles senden
-    if await is_admin(update, user_id):
-        return  
-
-    # 🛠️ Normale Nutzer: ALLE Medien löschen, aber Text erlauben
-    if update.message.photo or update.message.video or update.message.audio or update.message.document or update.message.sticker or update.message.animation or update.message.voice or update.message.video_note:
-        await update.message.delete()
-
-# --- Bot starten (❗ Startbefehl jetzt /readonly) ---
+# --- Bot starten ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("readonly", show_menu))  # <-- Befehl auf /readonly geändert
+    application.add_handler(CommandHandler("readonly", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.ALL, handle_messages))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.TEXT, filter_messages))  # Blockiert alle Medien außer Text
 
-    print("🤖 Read-Only Bot läuft mit Whitelist-Prüfung...")
+    print("🤖 NoReadBot läuft mit umgekehrtem Filter (nur Text erlaubt)...")
     application.run_polling()
 
 if __name__ == "__main__":
