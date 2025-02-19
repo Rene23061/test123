@@ -15,9 +15,9 @@ def is_group_allowed(chat_id):
     cursor_whitelist.execute("SELECT allow_ReadOnlyBot FROM allowed_groups WHERE chat_id = ? AND allow_ReadOnlyBot = 1", (chat_id,))
     return cursor_whitelist.fetchone() is not None
 
-# --- Datenbank für gesperrte Themen (umgestellt auf readonlybot.db) ---
+# --- Datenbank für gesperrte Themen ---
 def init_db():
-    conn = sqlite3.connect("/root/readonlybot.db", check_same_thread=False)  # <-- Korrektur
+    conn = sqlite3.connect("/root/readonlybot.db", check_same_thread=False)  # Datenbankpfad korrigiert
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS restricted_topics (
@@ -36,17 +36,7 @@ async def is_admin(update: Update, user_id: int) -> bool:
     chat_member = await update.effective_chat.get_member(user_id)
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
-# --- Menü erstellen (NICHT geändert) ---
-def get_menu():
-    keyboard = [
-        [InlineKeyboardButton("➕ Thema sperren", callback_data="add_topic")],
-        [InlineKeyboardButton("❌ Thema entsperren", callback_data="del_topic")],
-        [InlineKeyboardButton("📋 Gesperrte Themen anzeigen", callback_data="list_topics")],
-        [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-# --- Menü anzeigen (NICHT geändert) ---
+# --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -56,12 +46,10 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
-        msg = await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
-        context.user_data.setdefault("bot_messages", []).append(msg.message_id)
+        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
         return
 
-    msg = await update.message.reply_text("📷 Read-Only Themen-Verwaltung:", reply_markup=get_menu())
-    context.user_data.setdefault("bot_messages", []).append(msg.message_id)
+    await update.message.reply_text("📷 Read-Only Themen-Verwaltung:", reply_markup=get_menu())
 
 # --- Callback für Inline-Buttons (NICHT geändert) ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,31 +100,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# --- Nutzer-Eingabe für Themen-ID (NICHT geändert) ---
-async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
-
-    if not is_group_allowed(chat_id):
-        return
-
-    if "action" in context.user_data:
-        action = context.user_data.pop("action")
-
-        if action == "add_topic":
-            try:
-                topic_id = int(update.message.text.strip())
-                cursor.execute("INSERT INTO restricted_topics (chat_id, topic_id) VALUES (?, ?)", (chat_id, topic_id))
-                conn.commit()
-                await update.message.reply_text(f"✅ Thema {topic_id} gesperrt.")
-            except sqlite3.IntegrityError:
-                await update.message.reply_text("❌ Thema existiert bereits.")
-            except ValueError:
-                await update.message.reply_text("❌ Ungültige Eingabe! Bitte sende eine gültige Themen-ID.")
-
-            return await show_menu(update, context)
-
-# --- Nachrichtenprüfung (Filter KORREKT angepasst) ---
+# --- Nachrichtenprüfung (❗ JETZT KORREKT ANGEPASST) ---
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -144,29 +108,20 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_group_allowed(chat_id):
         return
 
+    # ✅ Admins dürfen alles senden
     if await is_admin(update, user_id):
         return  
 
-    # 🛠️ Alle Medien von normalen Nutzern löschen
-    if any([
-        update.message.photo,
-        update.message.video,
-        update.message.audio,
-        update.message.document,
-        update.message.sticker,
-        update.message.animation,
-        update.message.voice,
-        update.message.video_note
-    ]):
+    # 🛠️ Normale Nutzer: ALLE Medien löschen, aber Text erlauben
+    if update.message.photo or update.message.video or update.message.audio or update.message.document or update.message.sticker or update.message.animation or update.message.voice or update.message.video_note:
         await update.message.delete()
 
-# --- Bot starten (NICHT geändert) ---
+# --- Bot starten (❗ Startbefehl jetzt /readonly) ---
 def main():
     application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("readonly", show_menu))
+    application.add_handler(CommandHandler("readonly", show_menu))  # <-- Befehl auf /readonly geändert
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_input))
     application.add_handler(MessageHandler(filters.ALL, handle_messages))
 
     print("🤖 Read-Only Bot läuft mit Whitelist-Prüfung...")
