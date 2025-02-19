@@ -51,16 +51,26 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     if not is_group_allowed(chat_id):
-        await update.message.reply_text("🚫 Diese Gruppe ist nicht für den Text-Only-Bot freigeschaltet!")
+        await update.effective_message.reply_text("🚫 Diese Gruppe ist nicht für den Text-Only-Bot freigeschaltet!")
         return
 
     user_id = update.effective_user.id
     if not await is_admin(update, user_id):
-        await update.message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
+        await update.effective_message.reply_text("🚫 Du musst Admin sein, um dieses Menü zu öffnen!")
         return
 
-    msg = await update.message.reply_text("📄 Text-Only Themen-Verwaltung:", reply_markup=get_menu())
-    context.user_data["bot_messages"] = [msg.message_id]
+    text = "📄 Text-Only Themen-Verwaltung:"
+    reply_markup = get_menu()
+
+    if hasattr(update, "callback_query") and update.callback_query:
+        query = update.callback_query
+        try:
+            await query.message.edit_text(text, reply_markup=reply_markup)
+        except:
+            pass
+    else:
+        msg = await update.message.reply_text(text, reply_markup=reply_markup)
+        context.user_data["bot_messages"] = [msg.message_id]
 
 # --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
