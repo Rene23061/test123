@@ -12,12 +12,12 @@ cursor_whitelist = conn_whitelist.cursor()
 
 # Prüft, ob die Gruppe für den Text-Only-Bot erlaubt ist
 def is_group_allowed(chat_id):
-    cursor_whitelist.execute("SELECT allow_ReadOnlyBot FROM allowed_groups WHERE chat_id = ? AND allow_MediaOnlyBot = 1", (chat_id,))
+    cursor_whitelist.execute("SELECT allow_ReadOnlyBot FROM allowed_groups WHERE chat_id = ? AND allow_ReadOnlyBot = 1", (chat_id,))
     return cursor_whitelist.fetchone() is not None
 
 # --- Datenbank für gesperrte Themen ---
 def init_db():
-    conn = sqlite3.connect("mediaonlybot.db", check_same_thread=False)
+    conn = sqlite3.connect("readonlybot.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS restricted_topics (
@@ -152,7 +152,7 @@ async def handle_user_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("mediaonly", show_menu))
+    application.add_handler(CommandHandler("readonly", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.ALL, handle_user_input))  # Alle Nachrichten werden geprüft
 
