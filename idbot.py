@@ -10,11 +10,16 @@ def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
 
-    # Falls "group_name" fehlt, hinzufügen
+    # Falls "group_name" oder "allow_ReadOnlyBot" fehlen, hinzufügen
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall()]
+    
     if "group_name" not in columns:
         cursor.execute("ALTER TABLE allowed_groups ADD COLUMN group_name TEXT;")
+        conn.commit()
+
+    if "allow_ReadOnlyBot" not in columns:
+        cursor.execute("ALTER TABLE allowed_groups ADD COLUMN allow_ReadOnlyBot INTEGER DEFAULT 0;")
         conn.commit()
 
     return conn, cursor
@@ -154,10 +159,6 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_add_group))
     app.add_handler(CallbackQueryHandler(show_bots, pattern="^show_bots$"))
     app.add_handler(CallbackQueryHandler(manage_bot, pattern="^manage_bot_.*"))
-    app.add_handler(CallbackQueryHandler(add_group, pattern="^add_group$"))
-    app.add_handler(CallbackQueryHandler(remove_group, pattern="^remove_group$"))
-    app.add_handler(CallbackQueryHandler(delete_group, pattern="^confirm_remove_.*"))
-    app.add_handler(CallbackQueryHandler(list_groups, pattern="^list_groups$"))
 
     print("🤖 Bot gestartet! Warte auf Befehle...")
     app.run_polling()
