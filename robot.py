@@ -36,6 +36,16 @@ async def is_admin(update: Update, user_id: int) -> bool:
     chat_member = await update.effective_chat.get_member(user_id)
     return chat_member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
+# --- Menü erstellen (❗JETZT WIEDER HINZUGEFÜGT) ---
+def get_menu():
+    keyboard = [
+        [InlineKeyboardButton("➕ Thema sperren", callback_data="add_topic")],
+        [InlineKeyboardButton("❌ Thema entsperren", callback_data="del_topic")],
+        [InlineKeyboardButton("📋 Gesperrte Themen anzeigen", callback_data="list_topics")],
+        [InlineKeyboardButton("❌ Menü schließen", callback_data="close_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 # --- Menü anzeigen ---
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -51,7 +61,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📷 Read-Only Themen-Verwaltung:", reply_markup=get_menu())
 
-# --- Callback für Inline-Buttons (NICHT geändert) ---
+# --- Callback für Inline-Buttons ---
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat_id
@@ -100,7 +110,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-# --- Nachrichtenprüfung (❗ JETZT KORREKT ANGEPASST) ---
+# --- Nachrichtenprüfung ---
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
