@@ -2,7 +2,7 @@ import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-# --- Telegram-Bot-Token (TESTTOKEN) ---
+# --- Telegram-Bot-Token (ersetzen mit echtem Token) ---
 TOKEN = "7675671508:AAGCGHAnFUWtVb57CRwaPSxlECqaLpyjRXM"
 
 # --- Verbindung zur SQLite-Datenbank herstellen ---
@@ -10,10 +10,10 @@ def init_db():
     conn = sqlite3.connect("whitelist.db", check_same_thread=False)
     cursor = conn.cursor()
 
-    # Falls "group_name" oder "allow_ReadOnlyBot" fehlen, hinzufügen
+    # Prüfen, ob "group_name" & "allow_ReadOnlyBot" existieren, falls nicht -> hinzufügen
     cursor.execute("PRAGMA table_info(allowed_groups);")
     columns = [col[1] for col in cursor.fetchall()]
-    
+
     if "group_name" not in columns:
         cursor.execute("ALTER TABLE allowed_groups ADD COLUMN group_name TEXT;")
         conn.commit()
@@ -75,6 +75,10 @@ async def list_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute(f"SELECT chat_id, group_name FROM allowed_groups WHERE {column_name} = 1")
     groups = cursor.fetchall()
 
+    if not groups:
+        await query.message.edit_text(f"❌ Keine Gruppen für {bot_name} gefunden.")
+        return
+
     response = f"📋 **Erlaubte Gruppen für {bot_name}:**\n"
     response += "\n".join(f"- `{group[0]}` | **{group[1]}**" for group in groups if group[1] is not None)
 
@@ -128,6 +132,10 @@ async def remove_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute(f"SELECT chat_id, group_name FROM allowed_groups WHERE {column_name} = 1")
     groups = cursor.fetchall()
 
+    if not groups:
+        await query.message.edit_text("❌ Keine Gruppen zum Entfernen gefunden.")
+        return
+
     keyboard = [[InlineKeyboardButton(f"{group[1]} ({group[0]})", callback_data=f"confirm_remove_{group[0]}")] for group in groups]
     keyboard.append([InlineKeyboardButton("🔙 Abbrechen", callback_data=f"manage_bot_{bot_name}")])
 
@@ -139,14 +147,11 @@ async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_name = context.user_data["selected_bot"]
     column_name = f"allow_{bot_name}"
 
-    cursor.execute("SELECT group_name FROM allowed_groups WHERE chat_id = ?", (chat_id,))
-    group_name = cursor.fetchone()
-
-    cursor.execute(f"UPDATE allowed_groups SET {column_name} = 0 WHERE chat_id = ?", (chat_id,))
+    cursor.execute("UPDATE allowed_groups SET {} = 0 WHERE chat_id = ?".format(column_name), (chat_id,))
     conn.commit()
 
     await query.message.edit_text(
-        f"✅ Gruppe **{group_name[0]}** (`{chat_id}`) wurde für {bot_name} entfernt.",
+        f"✅ Gruppe (`{chat_id}`) wurde für {bot_name} entfernt.",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Zurück zum Hauptmenü", callback_data="show_bots")]])
     )
