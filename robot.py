@@ -148,7 +148,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("mediaonly", show_menu))
+    application.add_handler(CommandHandler("readonly", show_menu))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.ALL, handle_messages))
 
